@@ -191,7 +191,7 @@ function CuratedPlaylistTile({
           }}
           aria-label={`Play ${label}`}
         >
-          <span className="ml-0.5 block text-sm leading-none">&#9654;</span>
+          <span className="ml-0.5 block text-sm leading-none text-primary-foreground">&#9654;</span>
         </button>
       )}
     </div>
@@ -290,7 +290,7 @@ function PopularArtistsSection({
                 }}
                 aria-label={`Play ${artist.name}`}
               >
-                <span className="ml-0.5 block text-sm leading-none">&#9654;</span>
+                <span className="ml-0.5 block text-sm leading-none text-primary-foreground">&#9654;</span>
               </button>
             </div>
             <div
@@ -521,7 +521,6 @@ function AiDjConsole({
 
 export default function MainContent({
   activeNav = "1",
-  vibeMode = false,
   onSearchCommand,
   onTrackPlay,
   onLikeToggle,
@@ -547,8 +546,6 @@ export default function MainContent({
   searchPending = false,
 }: {
   activeNav?: string
-  /** Party palette + mesh only on AI DJ (nav 4) when true */
-  vibeMode?: boolean
   /** iTunes search in flight (home search bar → `search` command) */
   searchPending?: boolean
   onSearchCommand?: (query: string) => void
@@ -785,12 +782,8 @@ export default function MainContent({
       ? "flex flex-1 flex-col min-h-0 overflow-hidden p-8"
       : "flex-1 min-h-0 overflow-auto p-8 space-y-6"
 
-  const aiDjPartySurface = vibeMode && activeNav === "4"
-
   return (
-    <div
-      className={`flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden bg-background${aiDjPartySurface ? " vibe-party-scope vibe-theme" : ""}`}
-    >
+    <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden bg-background">
       {/* Search — same label rhythm as right pane (&gt; NOW PLAYING), no framed strip */}
       <div className="flex-shrink-0 px-4 pt-8 pb-2 bg-background">
         <div

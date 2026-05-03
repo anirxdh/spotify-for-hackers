@@ -177,6 +177,17 @@ export default function SpotifyTerminal() {
   }, [])
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      document.documentElement.classList.remove("vibe-party-root")
+      return
+    }
+    document.documentElement.classList.toggle("vibe-party-root", vibeMode)
+    return () => {
+      document.documentElement.classList.remove("vibe-party-root")
+    }
+  }, [isAuthenticated, vibeMode])
+
+  useEffect(() => {
     try {
       localStorage.setItem(VIBE_MODE_KEY, vibeMode ? "1" : "0")
     } catch {
@@ -888,7 +899,6 @@ export default function SpotifyTerminal() {
             />
             <MainContent
               activeNav={activeNav}
-              vibeMode={vibeMode}
               onHomeSelectionBusyChange={setHomeSelectionBusy}
               searchPending={searchPending}
               onSearchCommand={(q) => void handleCommand(`search ${q}`)}

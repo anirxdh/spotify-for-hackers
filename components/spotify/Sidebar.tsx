@@ -129,7 +129,7 @@ export default function Sidebar({
   return (
     <aside className="flex flex-col h-full bg-background w-[260px] min-w-[260px] overflow-hidden">
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent className="font-mono sm:max-w-md max-h-[90vh] overflow-y-auto border-primary/20">
+        <DialogContent className="vibe-party-dialog font-mono sm:max-w-md max-h-[90vh] overflow-y-auto border-primary/20">
           <DialogHeader>
             <DialogTitle className="text-primary tracking-wide">
               {'>'} ACCOUNT {"&"} SETTINGS
