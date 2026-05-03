@@ -250,7 +250,7 @@ export default function Sidebar({
                       <img
                         src={avatar.src}
                         alt=""
-                        className="h-full w-full object-cover brightness-125 contrast-125 saturate-150"
+                        className="theme-tint-art h-full w-full object-cover brightness-125 contrast-125 saturate-150"
                       />
                     </span>
                     <span className="block truncate text-center text-[10px]">{avatar.label}</span>
@@ -301,7 +301,7 @@ export default function Sidebar({
             <img
               src={selectedAvatar.src}
               alt=""
-              className="h-full w-full object-cover brightness-125 contrast-125 saturate-150"
+              className="theme-tint-art h-full w-full object-cover brightness-125 contrast-125 saturate-150"
             />
           </span>
           <div className="flex flex-col min-w-0 text-right">

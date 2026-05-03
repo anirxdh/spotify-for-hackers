@@ -106,10 +106,10 @@ export default function BottomPlayer({
   }
 
   return (
-    <footer className="bg-background flex-shrink-0">
-      <div className="flex items-center gap-4 px-4 py-3">
+    <footer className="flex-shrink-0 bg-background">
+      <div className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-4">
         {/* Track info — click artwork/title to expand Now Playing sidebar */}
-        <div className="flex items-center gap-2 w-[260px] min-w-[200px]">
+        <div className="flex w-full min-w-0 items-center gap-2 sm:w-[260px] sm:min-w-[200px]">
           <button
             type="button"
             onClick={() => onOpenNowPlaying?.()}
@@ -117,13 +117,13 @@ export default function BottomPlayer({
             className="flex min-w-0 flex-1 items-center gap-3 rounded px-1 py-0.5 text-left transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:hover:bg-transparent disabled:opacity-70"
             aria-label="Open now playing panel"
           >
-            <div className="w-16 h-16 bg-card flex items-center justify-center flex-shrink-0 overflow-hidden pointer-events-none">
+            <div className="pointer-events-none flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden bg-card sm:h-16 sm:w-16">
               {thumbSrc ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={thumbSrc}
                   alt=""
-                  className="w-full h-full object-cover"
+                  className="theme-tint-art w-full h-full object-cover"
                   title={playlistName ?? undefined}
                 />
               ) : (
@@ -171,7 +171,7 @@ export default function BottomPlayer({
         </div>
 
         {/* Center: controls + progress */}
-        <div className="flex-1 flex flex-col items-center gap-2">
+        <div className="flex w-full flex-col items-center gap-2 sm:flex-1">
           {/* Playback controls */}
           <div className="flex items-center gap-4">
             <button
@@ -192,7 +192,7 @@ export default function BottomPlayer({
             <button
               onClick={onPlayPause}
               type="button"
-              className={`player-transport-play w-9 h-9 flex items-center justify-center text-sm transition-all duration-150 font-mono rounded-md ${
+              className={`player-transport-play flex h-11 w-11 items-center justify-center rounded-md font-mono text-base transition-all duration-150 sm:h-9 sm:w-9 sm:text-sm ${
                 isPlaying
                   ? "bg-primary text-primary-foreground text-glow hover:bg-accent hover:text-primary"
                   : "bg-primary/15 text-primary hover:bg-primary hover:text-primary-foreground"
@@ -244,10 +244,10 @@ export default function BottomPlayer({
         </div>
 
         {/* Right: Volume */}
-        <div className="flex items-center justify-end w-[180px] min-w-[140px] shrink-0">
-          <div className="flex flex-col gap-1">
+        <div className="flex w-full shrink-0 items-center justify-between border-t border-primary/10 pt-2 sm:w-[180px] sm:min-w-[140px] sm:justify-end sm:border-t-0 sm:pt-0">
+          <div className="flex w-full flex-row items-center justify-between gap-3 sm:w-auto sm:flex-col sm:items-start sm:gap-1">
             <div className="text-muted-foreground text-xs tracking-widest">{'>'} VOLUME <span className="text-primary">[↑↓]</span></div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 sm:self-end">
               <VolumeBar value={volumeValue} onChange={handleVolumeChange} />
               <span className="inline-flex items-center gap-0 text-xs font-mono">
                 <span className="text-primary tabular-nums">{volumeValue}%</span>

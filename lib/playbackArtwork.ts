@@ -1,15 +1,16 @@
 /**
- * Image shown while playing: prefer the track's album/single art when present,
- * otherwise curated playlist / chart cover. Bump iTunes CDN thumbs to a larger size.
+ * Image while playing: prefer homepage queue tile (curated / chart / popular artist)
+ * when present, then iTunes track art. Bump iTunes CDN thumbs to a larger size.
  */
 export function playbackArtworkUrl(
   trackArtworkUrl: string | null | undefined,
   playlistCoverSrc: string | null | undefined,
 ): string | null {
+  const p = playlistCoverSrc?.trim()
+  if (p) return p
   const t = trackArtworkUrl?.trim()
   if (t) return bumpItunesArtworkSize(t)
-  const p = playlistCoverSrc?.trim()
-  return p || null
+  return null
 }
 
 function bumpItunesArtworkSize(url: string): string {

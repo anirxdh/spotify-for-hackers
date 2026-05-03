@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import Sidebar from "@/components/spotify/Sidebar"
 import MainContent, { AppFooter } from "@/components/spotify/MainContent"
 import BottomPlayer from "@/components/spotify/BottomPlayer"
@@ -13,33 +13,53 @@ import {
   iTunesTrack,
   getCuratedPlaylistCover,
   getPlaylistDisplayLabel,
+  getFeaturedChartDisplayLabel,
   DEFAULT_CURATED_FETCH_LIMIT,
+  FEATURED_CHART_NAMES,
 } from "@/lib/itunesService"
+import { POPULAR_ARTISTS } from "@/lib/discovery"
 import { mockTrackToLikedEntry, MOCK_LIKED_ID_PREFIX, tracks } from "@/lib/mockTracks"
 import { getVoiceResponse, shouldTriggerVoice, VoiceContext } from "@/lib/voiceResponses"
 import { speak, stopSpeech } from "@/lib/textToSpeech"
-import { getElevenLabsStatus, VOICES } from "@/lib/elevenLabsService"
+import { getElevenLabsStatus } from "@/lib/elevenLabsService"
+import { AI_DJ_HOSTS } from "@/lib/aiDjHosts"
 
-const DJ_SPEECH_CONFIG = {
-  /** Required so `speak()` routes through `/api/tts` → ElevenLabs (see `lib/textToSpeech.ts`) */
+/** While auto-DJ talks, next preview plays at this fraction of the user volume (dead-air bridge). */
+const AUTO_DJ_LINK_BED_RATIO = 0.26
+
+/** Shared TTS settings; `voiceId` and `delivery` come from the selected AI DJ host. */
+const DJ_SPEECH_BASE = {
   useElevenLabs: true,
-  voiceId: VOICES.charlie,
   modelId: "eleven_v3",
   stability: 0.5,
   similarityBoost: 0.78,
   style: 0.38,
   speed: 1.03,
   useSpeakerBoost: true,
-  delivery: "[warm, excited radio DJ]",
-  /** If the API key is missing or the request fails, still hear DJ lines via Web Speech */
   fallbackToBrowser: true,
   rate: 1.02,
   pitch: 1,
   volume: 1,
-}
+} as const
 
 const SILENT_AUDIO_UNLOCK =
   "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQQAAAAAAA=="
+
+const MOBILE_PLAYLISTS = [
+  "This Is The Weeknd",
+  "Lo-Fi Beats",
+  "Cyberpunk 2077 Radio",
+  "Night Drive",
+  "Focus Mode",
+]
+
+const MOBILE_NAV_ITEMS = [
+  { key: "1", label: "Home" },
+  { key: "2", label: "Library" },
+  { key: "3", label: "Terminal" },
+  { key: "4", label: "DJ" },
+  { key: "5", label: "Help" },
+]
 
 const VIBE_MODE_KEY = "play-sh-vibe-mode"
 const LIKED_TRACKS_STORAGE_KEY = "play-sh-liked-tracks"
@@ -53,6 +73,27 @@ export default function SpotifyTerminal() {
   const [commandLogs, setCommandLogs] = useState<CommandLog[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [autoDJ, setAutoDJ] = useState(false)
+  /** AI DJ tab: selected host (0–3) drives ElevenLabs voice + on-screen persona */
+  const [aiDjHostIndex, setAiDjHostIndex] = useState(0)
+
+  const djSpeechConfig = useMemo(() => {
+    const h = AI_DJ_HOSTS[aiDjHostIndex] ?? AI_DJ_HOSTS[0]
+    return {
+      ...DJ_SPEECH_BASE,
+      voiceId: h.voiceId,
+      delivery: h.delivery,
+    }
+  }, [aiDjHostIndex])
+
+  /** Groq `/api/dj`: persona + how this host reads the rotating “journey” flows */
+  const djGroqHostFields = useMemo(() => {
+    const h = AI_DJ_HOSTS[aiDjHostIndex] ?? AI_DJ_HOSTS[0]
+    return {
+      hostPersona: h.groqPersona,
+      hostJourneyLens: h.groqJourneyLens,
+      hostJourneyUserHint: h.groqJourneyUserHint,
+    }
+  }, [aiDjHostIndex])
   const [vibeMode, setVibeMode] = useState(false)
   const [searchResults, setSearchResults] = useState<iTunesTrack[]>([])
   const [currentAudioTrack, setCurrentAudioTrack] = useState<iTunesTrack | null>(null)
@@ -80,7 +121,7 @@ export default function SpotifyTerminal() {
   } | null>(null)
   const [playbackPlaylist, setPlaybackPlaylist] = useState<{
     name: string
-    coverSrc: string
+    coverSrc: string | null
   } | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   /** When true, right Now Playing column is collapsed. Starts true so the panel only opens after the user selects a track and expands (bottom bar or edge tab). */
@@ -111,24 +152,32 @@ export default function SpotifyTerminal() {
   searchResultsRef.current = searchResults
 
   /** Lower iTunes preview volume while DJ TTS plays; restore after (and avoid volume slider fighting the duck). */
-  const withPreviewDucked = useCallback(async (speakBlock: () => Promise<void>) => {
-    const a = audioRef.current
-    const normal = Math.min(1, Math.max(0, volumeRef.current / 100))
-    let duckApplied = false
-    if (a?.src && !a.paused && !a.ended) {
-      previewDuckActiveRef.current = true
-      a.volume = normal * 0.14
-      duckApplied = true
-    }
-    try {
-      await speakBlock()
-    } finally {
-      if (duckApplied && a) {
-        a.volume = Math.min(1, Math.max(0, volumeRef.current / 100))
+  const withPreviewDucked = useCallback(
+    async (
+      speakBlock: () => Promise<void>,
+      duckOpts?: { holdDuckRefAfter?: boolean },
+    ) => {
+      const a = audioRef.current
+      const normal = Math.min(1, Math.max(0, volumeRef.current / 100))
+      let duckApplied = false
+      if (a?.src && !a.paused && !a.ended) {
+        previewDuckActiveRef.current = true
+        a.volume = normal * 0.14
+        duckApplied = true
       }
-      previewDuckActiveRef.current = false
-    }
-  }, [])
+      try {
+        await speakBlock()
+      } finally {
+        if (duckApplied && a) {
+          a.volume = Math.min(1, Math.max(0, volumeRef.current / 100))
+        }
+        if (!duckOpts?.holdDuckRefAfter) {
+          previewDuckActiveRef.current = false
+        }
+      }
+    },
+    [],
+  )
 
   const hasPlaybackTrack = currentAudioTrack !== null || activeTrack !== null
   const showNowPlayingPanel = hasPlaybackTrack && !nowPlayingCollapsed
@@ -233,11 +282,11 @@ export default function SpotifyTerminal() {
     (context: VoiceContext, trackName?: string) => {
       if (!aiVoiceEnabled) return
       if (activeNavRef.current !== "4") return
-      const message = getVoiceResponse(context, trackName)
+      const message = getVoiceResponse(context, trackName, aiDjHostIndex)
       setIsSpeaking(true)
       void (async () => {
         try {
-          await withPreviewDucked(() => speak(message, DJ_SPEECH_CONFIG))
+          await withPreviewDucked(() => speak(message, djSpeechConfig))
         } catch (e) {
           console.error("[AI DJ voice]", e)
         } finally {
@@ -245,7 +294,7 @@ export default function SpotifyTerminal() {
         }
       })()
     },
-    [aiVoiceEnabled, withPreviewDucked],
+    [aiVoiceEnabled, withPreviewDucked, djSpeechConfig, aiDjHostIndex],
   )
 
   const pushRecentlyPlayed = useCallback((track: iTunesTrack) => {
@@ -261,10 +310,11 @@ export default function SpotifyTerminal() {
     source?: { playlistName: string },
     opts?: { skipPlay?: boolean },
   ) => {
+    const sourceCover = source?.playlistName ? getCuratedPlaylistCover(source.playlistName) : null
     if (source?.playlistName) {
       setPlaybackPlaylist({
         name: source.playlistName,
-        coverSrc: getCuratedPlaylistCover(source.playlistName),
+        coverSrc: sourceCover,
       })
     } else setPlaybackPlaylist(null)
     setCurrentAudioTrack(track)
@@ -273,7 +323,7 @@ export default function SpotifyTerminal() {
     setTrackDuration(track.duration || 30)
     setActiveTrack(null)
     setIsPlaying(false)
-    pushRecentlyPlayed(track)
+    pushRecentlyPlayed(sourceCover ? { ...track, artwork: sourceCover } : track)
     const a = audioRef.current
     if (!a) return
     a.pause()
@@ -478,13 +528,14 @@ export default function SpotifyTerminal() {
   }
 
   const announceDjTransitionRef = useRef(
-    async (_a: iTunesTrack | null, _b: iTunesTrack, _n: number) => {},
+    async (_a: iTunesTrack | null, _b: iTunesTrack, _n: number, _o?: { holdDuckRefAfterSpeak?: boolean }) => {},
   )
 
   const announceDjTransition = async (
     cur: iTunesTrack | null,
     next: iTunesTrack,
     queueSize: number,
+    opts?: { holdDuckRefAfterSpeak?: boolean },
   ) => {
     let msg = `${next.title} — ${next.artist}`
     try {
@@ -498,6 +549,7 @@ export default function SpotifyTerminal() {
           nextTrack: { title: next.title, artist: next.artist, album: next.album },
           queueSize,
           flowIndex: nextDjFlowIndex(),
+          ...djGroqHostFields,
         }),
       })
       const data = await res.json()
@@ -508,7 +560,9 @@ export default function SpotifyTerminal() {
     if (!aiVoiceEnabled || activeNavRef.current !== "4") return
     setIsSpeaking(true)
     try {
-      await withPreviewDucked(() => speak(msg, DJ_SPEECH_CONFIG))
+      await withPreviewDucked(() => speak(msg, djSpeechConfig), {
+        holdDuckRefAfter: opts?.holdDuckRefAfterSpeak,
+      })
     } catch (e) {
       console.error("[AI DJ voice]", e)
     } finally {
@@ -529,6 +583,7 @@ export default function SpotifyTerminal() {
             ? { title: first.title, artist: first.artist, album: first.album }
             : null,
           flowIndex: nextDjFlowIndex(),
+          ...djGroqHostFields,
         }),
       })
       const data = await res.json()
@@ -540,7 +595,7 @@ export default function SpotifyTerminal() {
     setIsSpeaking(true)
     try {
       await withPreviewDucked(() =>
-        speak(msg, { ...DJ_SPEECH_CONFIG, style: 0.32, stability: 0.42 }),
+        speak(msg, { ...djSpeechConfig, style: 0.32, stability: 0.42 }),
       )
     } catch (e) {
       console.error("[AI DJ voice]", e)
@@ -720,6 +775,17 @@ export default function SpotifyTerminal() {
     void handleCommand(autoDJ ? "sudo auto-dj off" : "sudo auto dj")
   }
 
+  const openFeaturedChart = (name: string) => {
+    setSelectedPlaylist(name)
+    setActiveNav("1")
+  }
+
+  const openPopularArtist = (artist: { query: string }) => {
+    setSelectedPlaylist(null)
+    setActiveNav("1")
+    setSidebarArtistPick({ query: artist.query, id: Date.now() })
+  }
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!isAuthenticated) {
@@ -804,23 +870,37 @@ export default function SpotifyTerminal() {
           const qLen = searchResults.length
           if (autoDJ) {
             void (async () => {
-              try {
-                await announceDjTransitionRef.current(pt, nt, qLen)
-              } catch {
-                /* announce handles its own errors */
-              }
               const a = audioRef.current
               if (!a) return
-              setCurrentAudioTrack(nt)
-              pushRecentlyPlayed(nt)
-              setCurrentTime(0)
-              a.src = nt.previewUrl
-              a.load()
+              const normal = Math.min(1, Math.max(0, volumeRef.current / 100))
+              previewDuckActiveRef.current = true
               try {
-                await a.play()
-                setIsPlaying(true)
-              } catch {
-                setIsPlaying(false)
+                setCurrentAudioTrack(nt)
+                pushRecentlyPlayed(nt)
+                setCurrentTime(0)
+                a.src = nt.previewUrl
+                a.load()
+                try {
+                  await a.play()
+                  setIsPlaying(true)
+                } catch {
+                  setIsPlaying(false)
+                  return
+                }
+                a.volume = normal * AUTO_DJ_LINK_BED_RATIO
+                try {
+                  await announceDjTransitionRef.current(pt, nt, qLen, {
+                    holdDuckRefAfterSpeak: true,
+                  })
+                } catch {
+                  /* announce handles its own errors */
+                }
+              } finally {
+                previewDuckActiveRef.current = false
+                const ax = audioRef.current
+                if (ax) {
+                  ax.volume = Math.min(1, Math.max(0, volumeRef.current / 100))
+                }
               }
             })()
           } else {
@@ -856,24 +936,91 @@ export default function SpotifyTerminal() {
           <SplashScreen />
         </div>
       ) : (
-        <div
-          className="app-frame flex h-screen w-screen flex-col overflow-x-hidden overflow-y-auto bg-background text-primary font-mono select-none transition-all duration-1000"
-        >
-          <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden">
-            <Sidebar
+        <div className="min-h-screen w-screen overflow-x-hidden bg-background text-primary font-mono select-none transition-all duration-1000">
+          <div
+            className="app-frame flex h-screen w-screen flex-col overflow-hidden bg-background"
+          >
+          <div className="flex flex-1 min-h-0 min-w-0 flex-col overflow-hidden md:flex-row">
+            <div className="md:hidden border-b border-primary/15 bg-background">
+              <div className="flex items-center gap-3 px-3 py-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/favicon.png" alt="" className="h-9 w-9 shrink-0 object-contain" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-primary text-sm font-mono text-glow-sm truncate">SPOTIFY.TRM</div>
+                  <div className="text-muted-foreground text-[10px] tracking-widest truncate">mobile signal online</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setVibeMode((v) => !v)}
+                  className="shrink-0 rounded border border-primary/30 px-2 py-1 text-[10px] font-mono text-primary"
+                >
+                  {vibeMode ? "PARTY" : "TERM"}
+                </button>
+              </div>
+
+              <div className="no-scrollbar flex gap-2 overflow-x-auto px-3 pb-3">
+                {MOBILE_NAV_ITEMS.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setActiveNav(item.key)}
+                    className={`shrink-0 rounded border px-3 py-1.5 text-[11px] font-mono ${
+                      activeNav === item.key
+                        ? "border-primary bg-primary/15 text-primary"
+                        : "border-primary/15 text-muted-foreground"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="no-scrollbar flex gap-2 overflow-x-auto px-3 pb-3">
+                {MOBILE_PLAYLISTS.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    disabled={homeSelectionBusy}
+                    onClick={() => handlePlaylistSelect(name)}
+                    className="shrink-0 rounded border border-primary/15 bg-primary/5 px-3 py-1.5 text-[10px] font-mono text-muted-foreground disabled:opacity-40"
+                  >
+                    {name}
+                  </button>
+                ))}
+                {POPULAR_ARTISTS.slice(0, 4).map((artist) => (
+                  <button
+                    key={artist.query}
+                    type="button"
+                    disabled={homeSelectionBusy}
+                    onClick={() => openPopularArtist(artist)}
+                    className="shrink-0 rounded border border-primary/15 px-3 py-1.5 text-[10px] font-mono text-muted-foreground disabled:opacity-40"
+                  >
+                    {artist.name}
+                  </button>
+                ))}
+                {FEATURED_CHART_NAMES.slice(0, 2).map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    disabled={homeSelectionBusy}
+                    onClick={() => openFeaturedChart(name)}
+                    className="shrink-0 rounded border border-primary/15 px-3 py-1.5 text-[10px] font-mono text-muted-foreground disabled:opacity-40"
+                  >
+                    {getFeaturedChartDisplayLabel(name, DEFAULT_CURATED_FETCH_LIMIT)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="hidden min-h-0 shrink-0 md:flex">
+              <Sidebar
               activeNav={activeNav}
+              selectedPlaylist={selectedPlaylist}
               selectionBusy={homeSelectionBusy}
               onNavChange={setActiveNav}
               onPlaylistSelect={handlePlaylistSelect}
-              onFeaturedChartSelect={(name) => {
-                setSelectedPlaylist(name)
-                setActiveNav("1")
-              }}
-              onPopularArtistSelect={(artist) => {
-                setSelectedPlaylist(null)
-                setActiveNav("1")
-                setSidebarArtistPick({ query: artist.query, id: Date.now() })
-              }}
+              onFeaturedChartSelect={openFeaturedChart}
+              onPopularArtistSelect={openPopularArtist}
               vibeMode={vibeMode}
               onVibeModeChange={(next) => {
                 setVibeMode(next)
@@ -896,9 +1043,15 @@ export default function SpotifyTerminal() {
                   return !v
                 })
               }}
-            />
+              />
+            </div>
             <MainContent
               activeNav={activeNav}
+              vibeMode={vibeMode}
+              onVibeModeChange={(next) => {
+                setVibeMode(next)
+                addTerminalLog(next ? `> theme: PARTY MODE` : `> theme: TERMINAL GREEN`)
+              }}
               onHomeSelectionBusyChange={setHomeSelectionBusy}
               searchPending={searchPending}
               onSearchCommand={(q) => void handleCommand(`search ${q}`)}
@@ -917,6 +1070,8 @@ export default function SpotifyTerminal() {
               onSidebarArtistPickHandled={() => setSidebarArtistPick(null)}
               autoDJ={autoDJ}
               onAutoDjToggle={handleAutoDjToggle}
+              aiDjHostIndex={aiDjHostIndex}
+              onAiDjHostIndexChange={setAiDjHostIndex}
               isSpeaking={isSpeaking}
               currentTrack={currentAudioTrack?.title || currentTrack?.title || ""}
               currentArtist={currentAudioTrack?.artist || currentTrack?.artist || ""}
@@ -1016,6 +1171,7 @@ export default function SpotifyTerminal() {
               onOpenNowPlaying={() => setNowPlayingCollapsed(false)}
             />
           ) : null}
+          </div>
           <AppFooter />
         </div>
       )}

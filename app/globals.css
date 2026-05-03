@@ -39,6 +39,7 @@
   --terminal-dim: #00882a;
   --terminal-bright: #00ff41;
   --terminal-bg-panel: #020c02;
+  --art-theme-filter: brightness(1.08) saturate(1.12) contrast(1.12);
 }
 
 @theme inline {
@@ -150,6 +151,14 @@
   box-shadow: 0 0 6px #00ff41, 0 0 12px #00ff4166;
 }
 
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Typing animation */
 @keyframes typing {
   from { width: 0; }
@@ -187,6 +196,59 @@
   box-shadow: 0 0 0 1px #00ff41, 0 0 8px #00ff4133;
 }
 
+.home-wave-surface {
+  display: flex;
+  overflow: hidden;
+  perspective: 760px;
+  transform: scale(1.02);
+  transform-style: preserve-3d;
+  transition: filter 500ms ease;
+}
+
+.home-wave-strip {
+  flex: 0 0 calc(100% / var(--n));
+  height: 100%;
+  background-repeat: no-repeat;
+  background-size: calc(var(--n) * 100%) 100%;
+  background-position: calc(var(--i) * 100% / (var(--n) - 1)) center;
+  transform-origin: center;
+  opacity: var(--wave-shade, 1);
+  will-change: transform, opacity;
+}
+
+.group:hover .home-wave-surface,
+.group:focus-within .home-wave-surface {
+  filter: var(--art-theme-filter) brightness(1.08);
+}
+
+@keyframes flagStripWave {
+  0%,
+  100% {
+    transform: translateY(0) translateZ(0) rotateY(-8deg);
+    opacity: 0.9;
+  }
+  25% {
+    transform: translateY(-4px) translateZ(10px) rotateY(10deg);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(2px) translateZ(3px) rotateY(6deg);
+    opacity: 0.96;
+  }
+  75% {
+    transform: translateY(4px) translateZ(-8px) rotateY(-12deg);
+    opacity: 0.88;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .group:hover .home-wave-strip,
+  .group:focus-within .home-wave-strip {
+    animation: flagStripWave 1.65s ease-in-out infinite;
+    animation-delay: calc(var(--i) * -90ms);
+  }
+}
+
 /* ASCII art area */
 .ascii-art {
   color: #00882a;
@@ -212,8 +274,8 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, transparent, rgba(0, 255, 65, 0.12), transparent),
-    repeating-linear-gradient(0deg, transparent, transparent 7px, rgba(0, 255, 65, 0.08) 8px);
+    linear-gradient(90deg, transparent, color-mix(in oklab, var(--primary) 14%, transparent), transparent),
+    repeating-linear-gradient(0deg, transparent, transparent 7px, color-mix(in oklab, var(--primary) 10%, transparent) 8px);
   opacity: 0.65;
 }
 
@@ -231,8 +293,12 @@
 .visualizer-bar {
   width: 5px;
   min-height: 12px;
-  background: linear-gradient(180deg, rgba(0, 255, 65, 0.95), rgba(0, 136, 42, 0.38));
-  box-shadow: 0 0 8px rgba(0, 255, 65, 0.65);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--primary) 96%, white 4%),
+    color-mix(in oklab, var(--primary) 38%, transparent)
+  );
+  box-shadow: 0 0 8px color-mix(in oklab, var(--primary) 68%, transparent);
   transform-origin: center;
   opacity: 0.42;
   animation: visualizerIdle 2.4s ease-in-out infinite;
@@ -292,10 +358,21 @@
   width: min(100%, 400px);
 }
 
+/* Generated terminal art is green by default; in vibe mode, shift phosphor green with the theme hue. */
+.theme-tint-art {
+  filter: var(--art-theme-filter);
+}
+
+html.vibe-party-root .theme-tint-art,
+.vibe-party-scope .theme-tint-art,
+.vibe-theme .theme-tint-art {
+  filter: var(--art-theme-filter);
+}
+
 /* AI DJ terminal face */
 .terminal-face {
   position: relative;
-  min-height: 430px;
+  min-height: 500px;
   overflow: hidden;
   background:
     radial-gradient(circle at 50% 45%, rgba(0, 255, 65, 0.16), transparent 42%),
@@ -323,28 +400,27 @@
   height: 100%;
   object-fit: cover;
   object-position: center;
-  filter: brightness(1.1) saturate(1.1) contrast(1.14);
   opacity: 0.98;
   z-index: 1;
 }
 
 .dj-status-strip {
   position: absolute;
-  left: 16px;
-  right: 16px;
-  top: 14px;
+  left: 18px;
+  right: 18px;
+  top: 16px;
   z-index: 4;
   display: flex;
   justify-content: space-between;
   color: var(--primary);
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: 0;
   text-shadow: var(--terminal-glow-sm);
 }
 
 .dj-signal-ring {
   position: absolute;
-  inset: 24px;
+  inset: 28px;
   border: 1px solid rgba(0, 255, 65, 0.18);
   box-shadow: inset 0 0 24px rgba(0, 255, 65, 0.08);
   z-index: 2;
@@ -359,20 +435,20 @@
   position: absolute;
   left: 18px;
   right: 18px;
-  bottom: 46px;
+  bottom: 54px;
   z-index: 4;
   display: flex;
   align-items: end;
   justify-content: center;
-  gap: 3px;
-  height: 54px;
-  padding: 8px 10px;
+  gap: 4px;
+  height: 62px;
+  padding: 9px 12px;
   background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.58));
   pointer-events: none;
 }
 
 .dj-live-visualizer span {
-  width: 5px;
+  width: 6px;
   height: 28%;
   background: var(--primary);
   box-shadow: 0 0 9px color-mix(in oklab, var(--primary) 58%, transparent);
@@ -381,13 +457,57 @@
   animation: visualizerIdle 1.2s ease-in-out infinite;
 }
 
-.terminal-face.is-speaking .dj-live-visualizer span,
 .terminal-face.is-speaking .face-mouth span {
   opacity: 1;
 }
 
+/* AI DJ: visualizer tiers — ambient (idle), armed (auto-DJ), peak (is-speaking on parent) */
+.terminal-face .dj-live-visualizer {
+  transition: opacity 0.45s ease, height 0.45s ease, padding 0.45s ease;
+}
+.terminal-face.dj-viz-ambient .dj-live-visualizer {
+  opacity: 0.42;
+  height: 48px;
+  padding: 7px 10px;
+}
+.terminal-face.dj-viz-ambient .dj-live-visualizer span {
+  opacity: 0.5;
+  width: 5px;
+  height: 18%;
+  animation-duration: 2.2s;
+}
+.terminal-face.dj-viz-armed .dj-live-visualizer {
+  opacity: 0.88;
+  height: 70px;
+  padding: 9px 12px;
+}
+.terminal-face.dj-viz-armed .dj-live-visualizer span {
+  opacity: 0.78;
+  width: 6px;
+  height: 32%;
+  animation-duration: 1.15s;
+}
+.terminal-face.dj-viz-armed:not(.is-speaking) .dj-signal-ring {
+  animation: djPulse 2s ease-in-out infinite;
+}
+.terminal-face.dj-face-focus {
+  transition: box-shadow 0.5s ease, transform 0.5s cubic-bezier(0.22, 1, 0.36, 1), min-height 0.5s ease;
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--primary) 28%, transparent),
+    0 28px 72px -28px color-mix(in oklab, var(--primary) 20%, transparent);
+}
+
+/* Peak viz: must win over ambient/armed span sizing */
+.terminal-face.is-speaking .dj-live-visualizer {
+  opacity: 1 !important;
+  height: 70px !important;
+  padding: 9px 12px !important;
+}
 .terminal-face.is-speaking .dj-live-visualizer span {
-  animation: visualizerPulse 0.54s ease-in-out infinite;
+  width: 6px !important;
+  height: 28% !important;
+  opacity: 1 !important;
+  animation: visualizerPulse 0.54s ease-in-out infinite !important;
 }
 
 .face-mouth {
@@ -398,19 +518,19 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  height: 56px;
-  width: min(170px, 36%);
+  gap: 6px;
+  height: 64px;
+  width: min(190px, 38%);
   transform: translate(-50%, -50%);
-  padding: 8px 12px;
+  padding: 9px 14px;
   background: rgba(0, 0, 0, 0.18);
   box-shadow: 0 0 18px color-mix(in oklab, var(--primary) 24%, transparent);
   mix-blend-mode: screen;
 }
 
 .face-mouth span {
-  width: 6px;
-  height: 9px;
+  width: 7px;
+  height: 10px;
   background: var(--muted-foreground);
   box-shadow: 0 0 5px rgba(0, 255, 65, 0.45);
   transform-origin: center;
@@ -423,15 +543,15 @@
 
 .face-caption {
   position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 14px;
+  left: 18px;
+  right: 18px;
+  bottom: 18px;
   z-index: 4;
   display: flex;
   justify-content: space-between;
   gap: 18px;
   color: var(--muted-foreground);
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: 0;
 }
 
@@ -554,6 +674,7 @@ html.vibe-party-root,
   --terminal-dim: hsl(calc(var(--vibe-party-hue) + 40) 55% 45%);
   --terminal-bright: hsl(var(--vibe-party-hue) 90% 62%);
   --terminal-bg-panel: hsl(calc(var(--vibe-party-hue) + 10) 38% 7%);
+  --art-theme-filter: hue-rotate(calc((var(--vibe-party-hue) - 120) * 1deg)) brightness(1.12) saturate(1.65) contrast(1.12);
 }
 
 html.vibe-party-root *,

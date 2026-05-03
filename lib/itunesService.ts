@@ -1,3 +1,5 @@
+import { POPULAR_ARTISTS } from "./discovery"
+
 export interface iTunesTrack {
   id: string
   title: string
@@ -57,8 +59,13 @@ export const CURATED_PLAYLIST_IMAGES: Record<string, string> = {
   "Viral 50 USA": "/chart-viral-50-usa.png",
 }
 
-export function getCuratedPlaylistCover(playlistName: string): string {
-  return CURATED_PLAYLIST_IMAGES[playlistName] ?? "/favicon.png"
+/** Curated / chart tile, popular-artist tile, or null (caller may fall back to track art or favicon). */
+export function getCuratedPlaylistCover(playlistName: string): string | null {
+  const curated = CURATED_PLAYLIST_IMAGES[playlistName]
+  if (curated) return curated
+  const artist = POPULAR_ARTISTS.find((a) => a.name === playlistName)
+  if (artist) return artist.image
+  return null
 }
 
 /** Default track count requested for curated / featured playlist loads */

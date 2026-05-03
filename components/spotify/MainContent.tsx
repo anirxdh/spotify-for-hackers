@@ -1,9 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react"
 import {
   searchITunes,
   getCuratedPlaylist,
+  getCuratedPlaylistCover,
   CURATED_PLAYLISTS,
   CURATED_PLAYLIST_IMAGES,
   FEATURED_CHART_NAMES,
@@ -16,6 +17,8 @@ import {
 import type { PopularArtist } from "@/lib/discovery"
 import { POPULAR_ARTISTS } from "@/lib/discovery"
 import type { CommandLog } from "@/lib/commandParser"
+import { playbackArtworkUrl } from "@/lib/playbackArtwork"
+import { AI_DJ_HOSTS } from "@/lib/aiDjHosts"
 import DockedTerminal from "@/components/spotify/DockedTerminal"
 import type { TerminalHandle } from "@/components/spotify/Terminal"
 
@@ -25,39 +28,80 @@ const fmt = (sec: number) => {
   return `${m}:${s.toString().padStart(2, "0")}`
 }
 
+/** Curated / charts / artist cover tiles — hover “flying paper” lift + tilt + stack shadow */
+const HOME_GRID_PAPER =
+  "relative z-0 overflow-visible rounded-sm shadow-[0_1px_0_0_color-mix(in_oklab,var(--border)_55%,transparent)] transition-[box-shadow] duration-300 hover:z-30 hover:shadow-[0_0_28px_color-mix(in_oklab,var(--primary)_18%,transparent)] focus-within:z-30"
+
+const HOME_WAVE_STRIPS = 14
+
+function HomeWaveImage({ src }: { src: string }) {
+  return (
+    <div className="home-wave-surface theme-tint-art absolute inset-0" aria-hidden>
+      {Array.from({ length: HOME_WAVE_STRIPS }).map((_, i) => (
+        <span
+          key={i}
+          className="home-wave-strip"
+          style={
+            {
+              "--i": i,
+              "--n": HOME_WAVE_STRIPS,
+              "--wave-shade": i % 4 === 0 ? 0.9 : i % 4 === 1 ? 1.18 : i % 4 === 2 ? 1.04 : 0.86,
+              backgroundImage: `url("${src}")`,
+            } as CSSProperties
+          }
+        />
+      ))}
+    </div>
+  )
+}
+
 interface TrackRowProps {
   index: number
   track: iTunesTrack
+  thumbnailSrc: string
   isActive: boolean
   isLiked: boolean
   onPlay: () => void
   onLike: () => void
 }
 
-function TrackRow({ index, track, isActive, isLiked, onPlay, onLike }: TrackRowProps) {
+function TrackRow({ index, track, thumbnailSrc, isActive, isLiked, onPlay, onLike }: TrackRowProps) {
   const [hovered, setHovered] = useState(false)
   return (
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={onPlay}
-      className={`grid grid-cols-[40px_1fr_1fr_1fr_60px_30px] gap-2 px-4 py-2 cursor-pointer transition-all duration-150 text-xs font-mono ${
+      className={`grid grid-cols-[44px_minmax(0,1fr)_30px] gap-2 px-2 py-2 text-xs font-mono transition-all duration-150 sm:grid-cols-[44px_minmax(0,1fr)_minmax(120px,0.8fr)_minmax(120px,0.8fr)_60px_30px] sm:px-4 ${
         isActive ? "bg-accent text-primary row-active" : hovered ? "bg-secondary" : ""
       }`}
     >
-      <span className="flex items-center text-muted-foreground">
-        {hovered || isActive ? (
-          <span className={`text-primary ${isActive ? "text-glow-sm" : ""}`}>&#9654;</span>
-        ) : (
-          <span>[{index + 1}]</span>
+      <span className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-sm ring-1 ring-primary/15">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={thumbnailSrc} alt="" className="theme-tint-art h-full w-full object-cover" />
+        {(hovered || isActive) && (
+          <span
+            className={`absolute inset-0 flex items-center justify-center bg-background/75 text-primary ${isActive ? "text-glow-sm" : ""}`}
+            aria-hidden
+          >
+            &#9654;
+          </span>
+        )}
+        {!hovered && !isActive && (
+          <span className="pointer-events-none absolute bottom-0.5 right-0.5 rounded bg-background/80 px-0.5 text-[9px] leading-none text-muted-foreground">
+            {index + 1}
+          </span>
         )}
       </span>
-      <span className={`flex items-center gap-1.5 truncate ${isActive ? "text-primary text-glow-sm" : "text-foreground"}`}>
+      <span className={`flex min-w-0 flex-col justify-center gap-0.5 truncate ${isActive ? "text-primary text-glow-sm" : "text-foreground"}`}>
         <span className="truncate">{track.title}</span>
+        <span className="truncate text-[10px] text-muted-foreground sm:hidden">
+          {track.artist} {track.album ? `/ ${track.album}` : ""}
+        </span>
       </span>
-      <span className={`truncate ${isActive ? "text-primary" : "text-muted-foreground"}`}>{track.artist}</span>
-      <span className="text-muted-foreground truncate">{track.album}</span>
-      <span className="text-muted-foreground text-right">{fmt(track.duration)}</span>
+      <span className={`hidden truncate sm:block ${isActive ? "text-primary" : "text-muted-foreground"}`}>{track.artist}</span>
+      <span className="hidden truncate text-muted-foreground sm:block">{track.album}</span>
+      <span className="hidden text-right text-muted-foreground sm:block">{fmt(track.duration)}</span>
       <button
         onClick={(e) => {
           e.stopPropagation()
@@ -83,6 +127,9 @@ function TrackList({
   isLiked,
   currentTrackId,
   playlistSourceName = null,
+  /** When set (e.g. home playlist/artist), use same art as homepage tiles; else per-track iTunes artwork */
+  listThumbnailSrc = null,
+  resolveThumbnailSrc,
 }: {
   tracks: iTunesTrack[]
   loading: boolean
@@ -92,6 +139,8 @@ function TrackList({
   isLiked: (id: string) => boolean
   currentTrackId: string | null
   playlistSourceName?: string | null
+  listThumbnailSrc?: string | null
+  resolveThumbnailSrc?: (track: iTunesTrack) => string | null
 }) {
   if (loading) {
     return <div className="px-4 py-6 text-xs font-mono text-muted-foreground">{"> "}loading?</div>
@@ -101,12 +150,12 @@ function TrackList({
   }
   return (
     <div className="overflow-hidden">
-      <div className="grid grid-cols-[40px_1fr_1fr_1fr_60px_30px] gap-2 px-4 py-2 bg-card text-xs text-muted-foreground tracking-widest">
-        <span></span>
+      <div className="grid grid-cols-[44px_minmax(0,1fr)_30px] gap-2 bg-card px-2 py-2 text-xs tracking-widest text-muted-foreground sm:grid-cols-[44px_minmax(0,1fr)_minmax(120px,0.8fr)_minmax(120px,0.8fr)_60px_30px] sm:px-4">
+        <span className="sr-only">ART</span>
         <span>TRACK</span>
-        <span>ARTIST</span>
-        <span>ALBUM</span>
-        <span className="text-right">TIME</span>
+        <span className="hidden sm:block">ARTIST</span>
+        <span className="hidden sm:block">ALBUM</span>
+        <span className="hidden text-right sm:block">TIME</span>
         <span></span>
       </div>
       {tracks.map((t, i) => (
@@ -114,6 +163,12 @@ function TrackList({
           key={`${t.id}-${i}`}
           index={i}
           track={t}
+          thumbnailSrc={
+            listThumbnailSrc ||
+            resolveThumbnailSrc?.(t) ||
+            playbackArtworkUrl(t.artwork, null) ||
+            "/favicon.png"
+          }
           isActive={currentTrackId === t.id}
           isLiked={isLiked(t.id)}
           onPlay={() =>
@@ -123,11 +178,30 @@ function TrackList({
               playlistSourceName ? { playlistName: playlistSourceName } : undefined,
             )
           }
-          onLike={() => onLikeToggle(t)}
+          onLike={() => onLikeToggle(listThumbnailSrc ? { ...t, artwork: listThumbnailSrc } : t)}
         />
       ))}
     </div>
   )
+}
+
+function resolveHomeStyleTrackArt(track: iTunesTrack): string | null {
+  const stored = playbackArtworkUrl(track.artwork, null)
+  if (stored && !stored.includes("favicon")) return stored
+
+  const haystack = `${track.artist} ${track.album} ${track.title}`.toLowerCase()
+  const artist = POPULAR_ARTISTS.find((a) => haystack.includes(a.name.toLowerCase()))
+  if (artist) return artist.image
+
+  if (haystack.includes("weeknd")) return CURATED_PLAYLIST_IMAGES["This Is The Weeknd"] ?? null
+  if (haystack.includes("lo-fi") || haystack.includes("lofi")) return CURATED_PLAYLIST_IMAGES["Lo-Fi Beats"] ?? null
+  if (haystack.includes("synthwave") || haystack.includes("cyberpunk")) return CURATED_PLAYLIST_IMAGES["Cyberpunk 2077 Radio"] ?? null
+  if (haystack.includes("midnight")) return CURATED_PLAYLIST_IMAGES["Night Drive"] ?? null
+  if (haystack.includes("einaudi") || haystack.includes("focus")) return CURATED_PLAYLIST_IMAGES["Focus Mode"] ?? null
+  if (haystack.includes("tame impala") || haystack.includes("indie")) return CURATED_PLAYLIST_IMAGES["Indie Rock"] ?? null
+  if (haystack.includes("miles davis") || haystack.includes("jazz")) return CURATED_PLAYLIST_IMAGES["Jazz Lounge"] ?? null
+
+  return null
 }
 
 function CuratedPlaylistTile({
@@ -150,10 +224,10 @@ function CuratedPlaylistTile({
   const cover = CURATED_PLAYLIST_IMAGES[name] ?? "/favicon.png"
   return (
     <div
-      className={`group relative aspect-square overflow-hidden text-left font-mono transition-all duration-200 focus-within:ring-2 focus-within:ring-primary ${
+      className={`group relative aspect-square text-left font-mono focus-within:ring-2 focus-within:ring-primary ${HOME_GRID_PAPER} ${
         selected
           ? "ring-2 ring-primary bg-primary/10"
-          : "bg-secondary/35 ring-1 ring-white/5 group-hover:ring-primary/50 group-hover:bg-secondary/50 group-hover:shadow-[0_0_24px_color-mix(in_oklab,var(--primary)_18%,transparent)]"
+          : "bg-secondary/35 ring-1 ring-white/5 hover:ring-primary/50 hover:bg-secondary/50"
       } ${disabled ? "pointer-events-none opacity-50" : ""}`}
     >
       <button
@@ -163,13 +237,10 @@ function CuratedPlaylistTile({
         disabled={disabled}
         aria-label={`Open ${label}`}
       />
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={cover}
-        alt=""
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.04] group-hover:brightness-110"
-      />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent" />
+      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-sm">
+        <HomeWaveImage src={cover} />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent" />
+      </div>
       <div className="pointer-events-none absolute bottom-0 left-0 right-0 p-3">
         <div
           className={`text-[11px] leading-snug line-clamp-2 tracking-wide transition-colors ${
@@ -210,12 +281,12 @@ function FeaturedChartsSection({
   selectionBusy?: boolean
 }) {
   return (
-    <div className="bg-card p-6">
-      <div className="flex items-center justify-between gap-4 mb-4">
+    <div className="bg-card p-3 sm:p-6">
+      <div className="mb-4 flex items-center justify-between gap-4">
         <div className="text-muted-foreground text-xs tracking-widest">{">"} FEATURED CHARTS</div>
         <div className="text-muted-foreground text-[11px] font-mono">LIVE SIGNAL</div>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
         {FEATURED_CHART_NAMES.map((name) => (
           <CuratedPlaylistTile
             key={name}
@@ -244,12 +315,9 @@ function PopularArtistsSection({
   selectionBusy?: boolean
 }) {
   return (
-    <div className="bg-card p-6">
-      <div className="flex items-center justify-between gap-4 mb-4">
-        <div className="text-muted-foreground text-xs tracking-widest">{">"} POPULAR ARTISTS</div>
-        <div className="text-muted-foreground text-[11px] font-mono">SHOW ALL</div>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
+    <div className="bg-card p-3 sm:p-6">
+      <div className="mb-4 text-xs tracking-widest text-muted-foreground">{">"} POPULAR ARTISTS</div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-6">
         {POPULAR_ARTISTS.map((artist) => (
           <div
             key={artist.name}
@@ -258,8 +326,8 @@ function PopularArtistsSection({
             }`}
           >
             <div
-              className={`relative aspect-square overflow-hidden bg-secondary/35 ring-1 transition-all duration-200 focus-within:ring-2 focus-within:ring-primary ${
-                activeName === artist.name ? "ring-primary" : "ring-white/5 group-hover:ring-primary/50"
+              className={`relative aspect-square bg-secondary/35 ring-1 focus-within:ring-2 focus-within:ring-primary ${HOME_GRID_PAPER} ${
+                activeName === artist.name ? "ring-primary" : "ring-white/5 hover:ring-primary/50"
               }`}
             >
               <button
@@ -269,13 +337,10 @@ function PopularArtistsSection({
                 disabled={selectionBusy}
                 aria-label={`Open ${artist.name}`}
               />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={artist.image}
-                alt=""
-                className="pointer-events-none absolute inset-0 h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.04] group-hover:brightness-110"
-              />
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
+              <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-sm">
+                <HomeWaveImage src={artist.image} />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
+              </div>
               <div className="pointer-events-none absolute left-3 top-3 text-[10px] text-primary/70">
                 ARTIST.SIGNAL
               </div>
@@ -344,61 +409,93 @@ const FOOTER_SOCIAL_LINKS = [
 
 export function AppFooter() {
   return (
-    <footer className="bg-card p-6 font-mono text-xs text-muted-foreground">
-      <div className="grid gap-8 xl:grid-cols-[1fr_auto]">
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {FOOTER_COLUMNS.map((column) => (
-            <div key={column.title} className="space-y-3">
-              <div className="text-primary text-glow-sm">{column.title}</div>
-              <div className="flex flex-wrap gap-x-3 gap-y-2">
-                {column.links.map((link) => (
-                  <button
-                    key={link}
-                    type="button"
-                    className="hover:text-primary transition-colors text-left"
-                  >
-                    {link}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
+    <footer className="w-full border-t border-primary/10 bg-card font-mono text-xs text-muted-foreground">
+      <div className="px-4 py-5 sm:hidden">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-primary text-glow-sm">spotify.trm</div>
+            <div className="mt-1 text-[11px] text-muted-foreground/80">© 2026</div>
+          </div>
+          <div className="flex gap-2">
+            {FOOTER_SOCIAL_LINKS.map((social) => (
+              <a
+                key={social.label}
+                href={social.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Spotify on ${social.name}`}
+                className="flex h-8 w-8 items-center justify-center bg-secondary text-[11px] text-primary hover:bg-primary hover:text-primary-foreground"
+              >
+                {social.label}
+              </a>
+            ))}
+          </div>
         </div>
-
-        <div className="flex gap-3 xl:justify-end">
-          {FOOTER_SOCIAL_LINKS.map((social) => (
-            <a
-              key={social.label}
-              href={social.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`Spotify on ${social.name}`}
-              className="h-9 w-9 shrink-0 bg-secondary text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
-            >
-              <span className="flex h-full w-full items-center justify-center">{social.label}</span>
-            </a>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-8 pt-6 border-t border-primary/15 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap gap-x-4 gap-y-2">
-          {FOOTER_LEGAL_LINKS.map((link) => (
-            <button key={link} type="button" className="hover:text-primary transition-colors">
+        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[11px]">
+          {["Legal", "Privacy", "Cookies"].map((link) => (
+            <button key={link} type="button" className="hover:text-primary">
               {link}
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-muted-foreground/80 text-[11px] tracking-wide">
-          <span>© 2026 spotify.trm</span>
-          <span className="text-muted-foreground/45" aria-hidden>
-            ·
-          </span>
-          <span className="text-primary/85">elevenlabs</span>
-          <span className="text-muted-foreground/45" aria-hidden>
-            ·
-          </span>
-          <span>v0</span>
+      </div>
+
+      <div className="hidden w-full px-4 py-6 sm:block sm:px-8 sm:py-8">
+        <div className="grid gap-8 xl:grid-cols-[1fr_auto]">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {FOOTER_COLUMNS.map((column) => (
+              <div key={column.title} className="space-y-3">
+                <div className="text-primary text-glow-sm">{column.title}</div>
+                <div className="flex flex-wrap gap-x-3 gap-y-2">
+                  {column.links.map((link) => (
+                    <button
+                      key={link}
+                      type="button"
+                      className="hover:text-primary transition-colors text-left"
+                    >
+                      {link}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-3 xl:justify-end">
+            {FOOTER_SOCIAL_LINKS.map((social) => (
+              <a
+                key={social.label}
+                href={social.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Spotify on ${social.name}`}
+                className="h-9 w-9 shrink-0 bg-secondary text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+              >
+                <span className="flex h-full w-full items-center justify-center">{social.label}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-8 flex flex-col gap-4 border-t border-primary/15 pt-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
+            {FOOTER_LEGAL_LINKS.map((link) => (
+              <button key={link} type="button" className="hover:text-primary transition-colors">
+                {link}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-muted-foreground/80 text-[11px] tracking-wide">
+            <span>© 2026 spotify.trm</span>
+            <span className="text-muted-foreground/45" aria-hidden>
+              ·
+            </span>
+            <span className="text-primary/85">elevenlabs</span>
+            <span className="text-muted-foreground/45" aria-hidden>
+              ·
+            </span>
+            <span>v0</span>
+          </div>
         </div>
       </div>
     </footer>
@@ -410,108 +507,164 @@ function AiDjConsole({
   isSpeaking,
   currentTrack,
   currentArtist,
+  selectedHost,
+  onSelectHost,
   onToggle,
 }: {
   autoDJ: boolean
   isSpeaking: boolean
   currentTrack: string
   currentArtist: string
+  selectedHost: number
+  onSelectHost: (index: number) => void
   onToggle?: () => void
 }) {
-  /** Lipsync + bar visualizer only while TTS is active; idle shows character only */
-  const visClass = isSpeaking ? "opacity-100" : "opacity-0 pointer-events-none"
+  const host = AI_DJ_HOSTS[selectedHost] ?? AI_DJ_HOSTS[0]
+  const mouthVis = isSpeaking ? "opacity-100" : "opacity-0 pointer-events-none"
+  const faceShellClass = [
+    "terminal-face",
+    "dj-viz-ambient",
+    "dj-face-focus",
+    autoDJ && !isSpeaking ? "dj-viz-armed" : "",
+    isSpeaking ? "is-speaking" : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
 
   return (
-    <section className="bg-card p-6 space-y-5 ai-dj-screen">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <div className="text-muted-foreground text-xs tracking-widest">{">"} AI DJ CONTROL ROOM</div>
-          <div className="text-primary text-2xl font-mono font-bold text-glow mt-1">SYS.DJ LIVE HOST</div>
-        </div>
-        <button
-          onClick={() => onToggle?.()}
-          className={`px-4 py-2 text-xs font-mono transition-colors ${
-            autoDJ
-              ? "bg-primary text-primary-foreground"
-              : "bg-primary/15 text-primary hover:bg-primary hover:text-primary-foreground"
-          }`}
-        >
-          {autoDJ ? "DISENGAGE" : "ENGAGE"}
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(340px,540px)_1fr] gap-5">
-        <div className={`terminal-face ${isSpeaking ? "is-speaking" : ""}`}>
-          <div className="face-scanline" />
-          <img
-            src="/ai-dj-character.png"
-            alt=""
-            className="dj-character-img"
-            draggable={false}
-          />
-          <div className="dj-status-strip">
-            <span>{autoDJ ? "BROADCASTING" : "MIC ARMED"}</span>
-            <span>{isSpeaking ? "VOICE OUT" : "STANDBY"}</span>
+    <section className="ai-dj-screen bg-card/40 p-5 sm:p-8">
+      <div className="mx-auto flex max-w-6xl flex-col gap-8">
+        <header className="flex flex-wrap items-end justify-between gap-5 border-b border-primary/10 pb-5">
+          <div>
+            <p className="text-[11px] font-mono uppercase tracking-[0.35em] text-muted-foreground">broadcast</p>
+            <h2
+              className="mt-1 text-4xl font-black tracking-tighter text-primary sm:text-5xl lg:text-6xl"
+              style={{ letterSpacing: "-0.045em" }}
+            >
+              AI DJ
+            </h2>
+            <p className="mt-2 max-w-lg text-base leading-snug text-muted-foreground">{host.line}</p>
           </div>
-          <div
-            className={`face-mouth transition-opacity duration-300 ${visClass}`}
-            aria-hidden={!isSpeaking}
-            aria-label={isSpeaking ? "AI DJ lipsync active" : undefined}
+          <button
+            type="button"
+            onClick={() => onToggle?.()}
+            className={`rounded-full border-2 px-5 py-3 text-xs font-bold uppercase tracking-[0.14em] transition-all sm:px-7 sm:text-sm sm:tracking-[0.18em] ${
+              autoDJ
+                ? "border-primary bg-primary text-primary-foreground shadow-[0_0_28px_color-mix(in_oklab,var(--primary)_38%,transparent)]"
+                : "border-primary/30 text-primary hover:border-primary hover:bg-primary/10"
+            }`}
           >
-            {Array.from({ length: 9 }).map((_, i) => (
-              <span key={i} style={{ animationDelay: `${i * 45}ms` }} />
-            ))}
-          </div>
-          <div className={`dj-live-visualizer transition-opacity duration-300 ${visClass}`} aria-hidden="true">
-            {Array.from({ length: 24 }).map((_, i) => (
-              <span key={i} style={{ animationDelay: `${i * 34}ms` }} />
-            ))}
-          </div>
-          <div className="dj-signal-ring" />
-          <div className="face-caption">
-            <span>{autoDJ ? "LIVE MIX BUS" : "STANDBY"}</span>
-            <span>{isSpeaking ? "ELEVENLABS TX" : "GROQ READY"}</span>
-          </div>
-        </div>
+            {autoDJ ? "Live" : "Click here to start"}
+          </button>
+        </header>
 
-        <div className="space-y-4">
-          <div className="bg-background p-4">
-            <div className="text-muted-foreground text-xs tracking-widest mb-2">{">"} CURRENT SIGNAL</div>
-            <div className="text-primary text-lg font-mono text-glow-sm truncate">
-              {currentTrack || "no track loaded"}
-            </div>
-            <div className="text-muted-foreground text-xs truncate">
-              {currentArtist || "search music or engage AI DJ to load a queue"}
+        <div className="flex flex-col gap-10 lg:flex-row lg:items-start lg:gap-12">
+          <div className="relative w-full min-w-0 flex-1 lg:max-w-xl">
+            <div
+              className={`${faceShellClass} min-h-[min(58vh,460px)] rounded-sm sm:min-h-[min(62vh,500px)] md:min-h-[min(64vh,540px)]`}
+            >
+              <div className="face-scanline" />
+              <img
+                src={host.image}
+                alt={host.name}
+                className="dj-character-img theme-tint-art"
+                draggable={false}
+              />
+              <div className="dj-status-strip">
+                <span className="font-mono">{autoDJ ? "TX" : "RX"}</span>
+                <span>{isSpeaking ? "VOICE" : autoDJ ? "SCAN" : "IDLE"}</span>
+              </div>
+              <div
+                className={`face-mouth transition-opacity duration-300 ${mouthVis}`}
+                aria-hidden={!isSpeaking}
+                aria-label={isSpeaking ? "AI DJ lipsync active" : undefined}
+              >
+                {Array.from({ length: 9 }).map((_, i) => (
+                  <span key={i} style={{ animationDelay: `${i * 45}ms` }} />
+                ))}
+              </div>
+              <div className="dj-live-visualizer" aria-hidden="true">
+                {Array.from({ length: 28 }).map((_, i) => (
+                  <span key={i} style={{ animationDelay: `${i * 28}ms` }} />
+                ))}
+              </div>
+              <div className="dj-signal-ring" />
+              <div className="face-caption">
+                <span className="font-semibold text-primary">{host.name}</span>
+                <span className="uppercase tracking-wider">{isSpeaking ? "on air" : host.vibe}</span>
+              </div>
             </div>
           </div>
 
-          <div className="bg-background p-4 min-h-[128px]">
-            <div className="text-muted-foreground text-xs tracking-widest mb-2">{">"} DJ MIC</div>
-            <div className="text-primary text-sm font-mono leading-relaxed text-glow-sm">
-              {isSpeaking ? (
-                <span className="inline-block animate-pulse">LIVE TX — carrier locked</span>
-              ) : autoDJ ? (
-                "listening for the next transition..."
-              ) : (
-                "sudo auto dj arms the live mix."
-              )}
-              <span className="cursor-blink">_</span>
+          <div className="flex min-w-0 flex-1 flex-col gap-6">
+            <div>
+              <p className="mb-8 text-[11px] uppercase tracking-[0.28em] text-muted-foreground sm:mb-9">
+                pick host
+              </p>
+              <div className="no-scrollbar flex items-end justify-start gap-2.5 overflow-x-auto pb-2 sm:flex-wrap sm:overflow-visible md:gap-3">
+                {AI_DJ_HOSTS.map((dj, i) => {
+                  const active = selectedHost === i
+                  return (
+                    <button
+                      key={dj.name}
+                      type="button"
+                      onClick={() => onSelectHost(i)}
+                      aria-pressed={active}
+                      aria-label={`Select ${dj.name}`}
+                      className={`shrink-0 origin-bottom rounded-lg border bg-background/60 text-left transition-all duration-300 ease-out ${
+                        active
+                          ? "z-10 w-[7.5rem] scale-[1.12] border-primary shadow-[0_16px_48px_-10px_color-mix(in_oklab,var(--primary)_32%,transparent)] sm:w-36 md:w-40"
+                          : "w-16 border-primary/15 opacity-80 hover:scale-105 hover:border-primary/40 hover:opacity-100 sm:w-[4.75rem] md:w-20"
+                      }`}
+                    >
+                      <div className="relative aspect-square overflow-hidden rounded-t-md">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={dj.image} alt="" className="theme-tint-art h-full w-full object-cover" />
+                        {active ? (
+                          <span className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/80 to-transparent" aria-hidden />
+                        ) : null}
+                      </div>
+                      <div className={`px-2 py-2 ${active ? "bg-primary/10" : ""}`}>
+                        <div
+                          className={`truncate font-mono font-bold leading-tight ${active ? "text-xs text-primary" : "text-[10px] text-muted-foreground sm:text-[11px]"}`}
+                        >
+                          {dj.name.replace(/^DJ\s/, "")}
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </div>
 
-          <div className="grid grid-cols-3 gap-2 text-xs font-mono">
-            <div className="bg-background p-3">
-              <div className="text-muted-foreground">VOICE</div>
-              <div className="text-primary mt-1">ELEVENLABS</div>
+            <div className="space-y-2.5 border-l-2 border-primary/40 pl-5">
+              <p className="font-mono text-sm text-primary">{host.voice}</p>
+              <p className="text-xs text-muted-foreground sm:text-[13px]">{host.specialty}</p>
+              <div className="flex flex-wrap gap-2 pt-1">
+                {host.traits.map((trait) => (
+                  <span key={trait} className="rounded-full border border-primary/20 px-2.5 py-1 text-[11px] text-muted-foreground">
+                    {trait}
+                  </span>
+                ))}
+              </div>
             </div>
-            <div className="bg-background p-3">
-              <div className="text-muted-foreground">BRAIN</div>
-              <div className="text-primary mt-1">GROQ</div>
+
+            <div className="rounded-lg border border-dashed border-primary/25 bg-background/50 px-4 py-3.5 font-mono text-base leading-snug sm:px-5 sm:py-4">
+              <span className="text-primary">{currentTrack || "—"}</span>
+              <span className="mx-2 text-muted-foreground/50">·</span>
+              <span className="text-muted-foreground">{currentArtist || "queue idle"}</span>
             </div>
-            <div className="bg-background p-3">
-              <div className="text-muted-foreground">MODE</div>
-              <div className="text-primary mt-1">{autoDJ ? "ON AIR" : "READY"}</div>
-            </div>
+
+            {(isSpeaking || !autoDJ) && (
+              <p className="font-mono text-sm leading-relaxed text-primary/90">
+                {isSpeaking ? (
+                  <span className="animate-pulse">carrier locked — elevenlabs</span>
+                ) : (
+                  <>when you are ready, hit start — link-mix, no dead air between tracks</>
+                )}
+                <span className="cursor-blink">_</span>
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -521,6 +674,8 @@ function AiDjConsole({
 
 export default function MainContent({
   activeNav = "1",
+  vibeMode = false,
+  onVibeModeChange,
   onSearchCommand,
   onTrackPlay,
   onLikeToggle,
@@ -532,6 +687,8 @@ export default function MainContent({
   onClearSelectedPlaylist,
   autoDJ = false,
   onAutoDjToggle,
+  aiDjHostIndex = 0,
+  onAiDjHostIndexChange,
   isSpeaking = false,
   currentTrack = "",
   currentArtist = "",
@@ -546,6 +703,8 @@ export default function MainContent({
   searchPending = false,
 }: {
   activeNav?: string
+  vibeMode?: boolean
+  onVibeModeChange?: (next: boolean) => void
   /** iTunes search in flight (home search bar → `search` command) */
   searchPending?: boolean
   onSearchCommand?: (query: string) => void
@@ -564,6 +723,9 @@ export default function MainContent({
   onHomeSelectionBusyChange?: (busy: boolean) => void
   autoDJ?: boolean
   onAutoDjToggle?: () => void
+  /** Selected AI DJ host (0–3); synced with parent for ElevenLabs voice */
+  aiDjHostIndex?: number
+  onAiDjHostIndexChange?: (index: number) => void
   isSpeaking?: boolean
   currentTrack?: string
   currentArtist?: string
@@ -667,6 +829,16 @@ export default function MainContent({
     [],
   )
 
+  /** Same cover as homepage tile / “playing from” header for the open list */
+  const activeListThumbnailSrc = useMemo(() => {
+    if (!activePlaylist) return null
+    return (
+      CURATED_PLAYLIST_IMAGES[activePlaylist] ??
+      POPULAR_ARTISTS.find((a) => a.name === activePlaylist)?.image ??
+      null
+    )
+  }, [activePlaylist])
+
   const renderNavContent = () => {
     switch (activeNav) {
       case "2": // YOUR LIBRARY
@@ -682,6 +854,7 @@ export default function MainContent({
                 onLikeToggle={onLikeToggle}
                 isLiked={isLiked}
                 currentTrackId={currentTrackId}
+                resolveThumbnailSrc={resolveHomeStyleTrackArt}
               />
             </div>
             <div className="bg-card p-6 space-y-3">
@@ -694,6 +867,7 @@ export default function MainContent({
                 onLikeToggle={onLikeToggle}
                 isLiked={isLiked}
                 currentTrackId={currentTrackId}
+                resolveThumbnailSrc={resolveHomeStyleTrackArt}
               />
             </div>
           </section>
@@ -706,6 +880,8 @@ export default function MainContent({
             isSpeaking={isSpeaking}
             currentTrack={currentTrack}
             currentArtist={currentArtist}
+            selectedHost={aiDjHostIndex}
+            onSelectHost={(i) => onAiDjHostIndexChange?.(i)}
             onToggle={onAutoDjToggle}
           />
         )
@@ -779,22 +955,22 @@ export default function MainContent({
 
   const contentShell =
     activeNav === "3"
-      ? "flex flex-1 flex-col min-h-0 overflow-hidden p-8"
-      : "flex-1 min-h-0 overflow-auto p-8 space-y-6"
+      ? "flex flex-1 flex-col min-h-0 overflow-x-hidden overflow-y-auto p-3 sm:p-5 lg:p-8"
+      : "flex-1 min-h-0 overflow-x-hidden overflow-y-auto p-3 sm:p-5 lg:p-8 space-y-4 sm:space-y-6"
 
   return (
     <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden bg-background">
       {/* Search — same label rhythm as right pane (&gt; NOW PLAYING), no framed strip */}
-      <div className="flex-shrink-0 px-4 pt-8 pb-2 bg-background">
+      <div className="flex-shrink-0 bg-background px-3 pb-2 pt-3 sm:px-4 sm:pt-6 lg:pt-8">
         <div
-          className={`flex flex-nowrap items-center gap-3 min-w-0 rounded-sm py-0.5 transition-colors ${
+          className={`flex min-w-0 flex-wrap items-center gap-2 rounded-sm py-0.5 transition-colors sm:flex-nowrap sm:gap-3 ${
             searchPending ? "ring-1 ring-primary/35 bg-primary/5" : ""
           }`}
         >
           <span className="text-muted-foreground text-xs tracking-widest shrink-0">
             {'>'} SEARCH
           </span>
-          <span className="text-muted-foreground text-xs font-mono shrink-0">
+          <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">
             user@spotify:~$
           </span>
           <input
@@ -810,7 +986,7 @@ export default function MainContent({
             disabled={searchPending}
             placeholder="search [artist/song] + Enter"
             aria-busy={searchPending}
-            className="flex-1 min-w-0 bg-transparent text-primary text-xs font-mono outline-none placeholder:text-muted-foreground caret-primary disabled:cursor-wait disabled:opacity-80"
+            className="min-w-[170px] flex-1 bg-transparent font-mono text-xs text-primary outline-none caret-primary placeholder:text-muted-foreground disabled:cursor-wait disabled:opacity-80"
           />
           {searchPending ? (
             <span className="text-primary text-xs font-mono shrink-0 animate-pulse tabular-nums pr-1">
@@ -818,6 +994,33 @@ export default function MainContent({
             </span>
           ) : (
             <span className="cursor-blink text-primary text-xs shrink-0">|</span>
+          )}
+          {onVibeModeChange && (
+            <div className="flex w-full shrink-0 items-center gap-2 border-primary/20 pt-2 sm:ml-auto sm:w-auto sm:gap-3 sm:border-l sm:pl-5 sm:pt-0">
+              <span className="text-muted-foreground text-[10px] tracking-widest max-sm:hidden">THEME</span>
+              <button
+                type="button"
+                onClick={() => onVibeModeChange(false)}
+                className={`rounded border px-2 py-1 text-[10px] font-mono uppercase tracking-wide transition-colors ${
+                  !vibeMode
+                    ? "border-primary bg-primary/15 text-primary"
+                    : "border-border text-muted-foreground hover:border-primary/40 hover:text-primary"
+                }`}
+              >
+                Terminal
+              </button>
+              <button
+                type="button"
+                onClick={() => onVibeModeChange(true)}
+                className={`rounded border px-2 py-1 text-[10px] font-mono uppercase tracking-wide transition-colors ${
+                  vibeMode
+                    ? "border-primary bg-primary/15 text-primary"
+                    : "border-border text-muted-foreground hover:border-primary/40 hover:text-primary"
+                }`}
+              >
+                Party
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -827,12 +1030,12 @@ export default function MainContent({
 
         {activeNav === "1" && (
           <>
-            <section className="bg-card p-6">
-              <div className="text-muted-foreground text-xs tracking-widest mb-4">{">"} CURATED PLAYLISTS</div>
+            <section className="bg-card p-3 sm:p-6">
+              <div className="mb-4 text-xs tracking-widest text-muted-foreground">{">"} CURATED PLAYLISTS</div>
               {curatedKeysFiltered.length === 0 ? (
                 <div className="text-xs font-mono text-muted-foreground py-8">{"> "}no playlists match this filter.</div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
                   {curatedKeysFiltered.map((pl) => (
                     <CuratedPlaylistTile
                       key={pl}
@@ -862,7 +1065,7 @@ export default function MainContent({
             />
 
             {activePlaylist && (
-              <section ref={homePlayingSectionRef} className="bg-card p-6 space-y-3">
+              <section ref={homePlayingSectionRef} className="space-y-3 bg-card p-3 sm:p-6">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="text-muted-foreground text-xs tracking-widest">
                     {">"} PLAYING FROM{" "}
@@ -878,16 +1081,12 @@ export default function MainContent({
                     CLOSE LIST
                   </button>
                 </div>
-                <div className="bg-background p-3 flex items-center gap-3">
+                <div className="flex items-center gap-3 bg-background p-3">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={
-                      CURATED_PLAYLIST_IMAGES[activePlaylist] ??
-                      POPULAR_ARTISTS.find((artist) => artist.name === activePlaylist)?.image ??
-                      "/favicon.png"
-                    }
+                    src={getCuratedPlaylistCover(activePlaylist) ?? "/favicon.png"}
                     alt=""
-                    className="w-28 h-28 object-cover flex-shrink-0"
+                    className="theme-tint-art h-20 w-20 flex-shrink-0 object-cover sm:h-28 sm:w-28"
                   />
                   <div className="min-w-0">
                     <div className="text-primary text-sm font-mono truncate">
@@ -905,6 +1104,7 @@ export default function MainContent({
                   isLiked={isLiked}
                   currentTrackId={currentTrackId}
                   playlistSourceName={activePlaylist}
+                  listThumbnailSrc={activeListThumbnailSrc}
                 />
               </section>
             )}

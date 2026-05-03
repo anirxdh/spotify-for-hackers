@@ -86,7 +86,7 @@ export default function NowPlaying({
           <img
             src={artSrc}
             alt=""
-            className="absolute inset-0 h-full w-full object-cover"
+            className="theme-tint-art absolute inset-0 h-full w-full object-cover"
           />
         ) : (
           <div className="flex h-full min-h-[180px] w-full items-center justify-center bg-[#030803] p-2">

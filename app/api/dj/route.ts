@@ -29,6 +29,12 @@ export async function POST(request: NextRequest) {
     const current = body.currentTrack ?? null
     const next = body.nextTrack ?? null
     const queueSize = Number(body.queueSize ?? 0)
+    const hostPersona = typeof body.hostPersona === "string" ? body.hostPersona.trim() : ""
+    const personaBlock = hostPersona ? ` ${hostPersona}` : ""
+    const hostJourneyLens = typeof body.hostJourneyLens === "string" ? body.hostJourneyLens.trim() : ""
+    const hostJourneyUserHint = typeof body.hostJourneyUserHint === "string" ? body.hostJourneyUserHint.trim() : ""
+    const journeyLensBlock = hostJourneyLens ? ` Host journey lens: ${hostJourneyLens}` : ""
+    const journeyUserBlock = hostJourneyUserHint ? ` ${hostJourneyUserHint}` : ""
 
     if (mode === "intro") {
       const openerTrack = next?.title && next?.artist
@@ -49,11 +55,11 @@ export async function POST(request: NextRequest) {
             {
               role: "system",
               content:
-                `${DJ_SYSTEM_PROMPT} For intro mode, welcome everyone like the party is starting and make it sound energetic. ${INTRO_FLOW_SYSTEM[flowIndex]}`,
+                `${DJ_SYSTEM_PROMPT}${personaBlock} For intro mode, welcome everyone like the party is starting and make it sound energetic. ${INTRO_FLOW_SYSTEM[flowIndex]}${journeyLensBlock}`,
             },
             {
               role: "user",
-              content: `Open the set now. ${openerTrack} Direction: ${INTRO_FLOW_USER[flowIndex]}`,
+              content: `Open the set now. ${openerTrack} Direction: ${INTRO_FLOW_USER[flowIndex]}${journeyUserBlock}`,
             },
           ],
         }),
@@ -89,11 +95,11 @@ export async function POST(request: NextRequest) {
         messages: [
           {
             role: "system",
-            content: `${DJ_SYSTEM_PROMPT} ${TRANSITION_FLOW_SYSTEM[flowIndex]}`,
+            content: `${DJ_SYSTEM_PROMPT}${personaBlock} ${TRANSITION_FLOW_SYSTEM[flowIndex]}${journeyLensBlock}`,
           },
           {
             role: "user",
-            content: `${transition} Queue size: ${queueSize}. ${TRANSITION_FLOW_USER[flowIndex]}`,
+            content: `${transition} Queue size: ${queueSize}. ${TRANSITION_FLOW_USER[flowIndex]}${journeyUserBlock}`,
           },
         ],
       }),
