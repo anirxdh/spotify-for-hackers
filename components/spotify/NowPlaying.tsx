@@ -75,12 +75,12 @@ export default function NowPlaying({
   const hasTransport = Boolean(onPlayPause || onNext || onPrev)
 
   return (
-    <div className="grid h-full min-h-0 w-full grid-rows-[auto_minmax(0,1fr)_auto_auto] gap-3">
+    <div className="flex h-full min-h-0 w-full flex-col gap-3">
       <div className="text-muted-foreground text-xs tracking-widest">
         {'>'} NOW PLAYING
       </div>
 
-      <div className="relative min-h-0 w-full overflow-hidden rounded-sm bg-card aspect-square max-h-[min(52vh,400px)]">
+      <div className="relative w-full shrink-0 overflow-hidden rounded-sm bg-card aspect-square max-h-[min(52vh,400px)]">
         {artSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img

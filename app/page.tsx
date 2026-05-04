@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import Sidebar from "@/components/spotify/Sidebar"
 import MainContent, { AppFooter } from "@/components/spotify/MainContent"
 import BottomPlayer from "@/components/spotify/BottomPlayer"
+import { resolveHomeStyleTrackArt } from "@/lib/playbackArtwork"
 import { TerminalHandle } from "@/components/spotify/Terminal"
 import NowPlaying from "@/components/spotify/NowPlaying"
 import SplashScreen from "@/components/SplashScreen"
@@ -26,6 +27,7 @@ import { AI_DJ_HOSTS } from "@/lib/aiDjHosts"
 
 /** While auto-DJ talks, next preview plays at this fraction of the user volume (dead-air bridge). */
 const AUTO_DJ_LINK_BED_RATIO = 0.26
+const AI_DJ_PLAYLIST_NAME = "Top Hits 2024"
 
 /** Shared TTS settings; `voiceId` and `delivery` come from the selected AI DJ host. */
 const DJ_SPEECH_BASE = {
@@ -181,6 +183,15 @@ export default function SpotifyTerminal() {
 
   const hasPlaybackTrack = currentAudioTrack !== null || activeTrack !== null
   const showNowPlayingPanel = hasPlaybackTrack && !nowPlayingCollapsed
+  /**
+   * Same image we use on the homepage track rows. When the AI DJ auto-advances
+   * (or you play an iTunes/search result without a known playlist cover), this
+   * keeps the bottom player / Now Playing artwork in sync with what you saw on home.
+   */
+  const homeStyleTrackArt = useMemo(
+    () => (currentAudioTrack ? resolveHomeStyleTrackArt(currentAudioTrack) : null),
+    [currentAudioTrack],
+  )
 
   const addTerminalLog = (message: string) => {
     setCommandLogs((prev) => [
@@ -345,6 +356,12 @@ export default function SpotifyTerminal() {
         addTerminalLog(`> loaded: ${track.title} — click play to start.`)
       })
   }
+
+  const playAiDjTrack = (
+    track: iTunesTrack,
+    queue: iTunesTrack[] = [track],
+    opts?: { skipPlay?: boolean },
+  ) => playTrack(track, queue, { playlistName: AI_DJ_PLAYLIST_NAME }, opts)
 
   const isTrackLiked = (id: string) => likedTracks.has(`itunes:${id}`)
   const persistLikedTracksList = (list: iTunesTrack[]) => {
@@ -659,7 +676,7 @@ export default function SpotifyTerminal() {
       setAutoDJ(true)
       if (results[0]) {
         await announceDjIntro(results[0])
-        playTrack(results[0], results)
+        playAiDjTrack(results[0], results)
       } else addTerminalLog("> no tracks found.")
       setIsProcessing(false)
       return
@@ -733,13 +750,17 @@ export default function SpotifyTerminal() {
         if (response.stateChange) {
           if (response.stateChange.audioUrl && searchResults.length > 0) {
             const sel = searchResults[response.stateChange.selectedTrackIndex || 0]
-            setPlaybackPlaylist(null)
-            setCurrentAudioTrack(sel)
-            pushRecentlyPlayed(sel)
-            if (audioRef.current) {
-              audioRef.current.src = response.stateChange.audioUrl
-              audioRef.current.currentTime = 0
-              audioRef.current.play().then(() => setIsPlaying(true)).catch(() => {})
+            if (autoDJ) {
+              playAiDjTrack(sel, searchResults)
+            } else {
+              setPlaybackPlaylist(null)
+              setCurrentAudioTrack(sel)
+              pushRecentlyPlayed(sel)
+              if (audioRef.current) {
+                audioRef.current.src = response.stateChange.audioUrl
+                audioRef.current.currentTime = 0
+                audioRef.current.play().then(() => setIsPlaying(true)).catch(() => {})
+              }
             }
             if (voiceContext === "play") triggerVoice("play", sel.title)
             applyStateChange(response.stateChange)
@@ -748,7 +769,7 @@ export default function SpotifyTerminal() {
             applyStateChange(response.stateChange)
             await announceDjIntro(firstQueued)
             if (firstQueued && !isPlaying) {
-              playTrack(
+              playAiDjTrack(
                 firstQueued,
                 searchResults.length > 0 ? searchResults : [firstQueued],
               )
@@ -876,7 +897,9 @@ export default function SpotifyTerminal() {
               previewDuckActiveRef.current = true
               try {
                 setCurrentAudioTrack(nt)
-                pushRecentlyPlayed(nt)
+                pushRecentlyPlayed(
+                  playbackPlaylist?.coverSrc ? { ...nt, artwork: playbackPlaylist.coverSrc } : nt,
+                )
                 setCurrentTime(0)
                 a.src = nt.previewUrl
                 a.load()
@@ -905,7 +928,9 @@ export default function SpotifyTerminal() {
             })()
           } else {
             setCurrentAudioTrack(nt)
-            pushRecentlyPlayed(nt)
+            pushRecentlyPlayed(
+              playbackPlaylist?.coverSrc ? { ...nt, artwork: playbackPlaylist.coverSrc } : nt,
+            )
             setCurrentTime(0)
             audio.src = nt.previewUrl
             audio.load()
@@ -932,15 +957,13 @@ export default function SpotifyTerminal() {
     <>
       <audio ref={audioRef} preload="auto" playsInline controls={false} />
       {!isAuthenticated ? (
-        <div className="splash-terminal-isolated min-h-screen w-screen">
+        <div className="splash-terminal-isolated min-h-screen w-full min-w-0">
           <SplashScreen />
         </div>
       ) : (
-        <div className="min-h-screen w-screen overflow-x-hidden bg-background text-primary font-mono select-none transition-all duration-1000">
-          <div
-            className="app-frame flex h-screen w-screen flex-col overflow-hidden bg-background"
-          >
-          <div className="flex flex-1 min-h-0 min-w-0 flex-col overflow-hidden md:flex-row">
+        <div className="flex min-h-[100dvh] w-full flex-col bg-background text-primary font-mono select-none transition-all duration-1000">
+          <div className="app-frame flex w-full flex-1 flex-col bg-background">
+          <div className="flex w-full flex-1 flex-col md:flex-row md:items-stretch">
             <div className="md:hidden border-b border-primary/15 bg-background">
               <div className="flex items-center gap-3 px-3 py-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1012,7 +1035,7 @@ export default function SpotifyTerminal() {
               </div>
             </div>
 
-            <div className="hidden min-h-0 shrink-0 md:flex">
+            <div className="hidden shrink-0 md:flex md:sticky md:top-0 md:h-[100dvh] md:self-start">
               <Sidebar
               activeNav={activeNav}
               selectedPlaylist={selectedPlaylist}
@@ -1082,7 +1105,7 @@ export default function SpotifyTerminal() {
               terminalRef={terminalRef}
             />
             {hasPlaybackTrack && (
-              <div className="relative hidden min-h-0 shrink-0 lg:flex lg:flex-row lg:items-stretch">
+              <div className="relative hidden shrink-0 lg:flex lg:flex-row lg:items-stretch lg:sticky lg:top-0 lg:h-[100dvh] lg:self-start">
                 {!showNowPlayingPanel && hasPlaybackTrack && (
                   <button
                     type="button"
@@ -1125,8 +1148,8 @@ export default function SpotifyTerminal() {
                             )
                           : null
                       }
-                      trackArtworkUrl={currentAudioTrack?.artwork ?? null}
-                      showSignalVisualizer={activeNav !== "4"}
+                      trackArtworkUrl={homeStyleTrackArt ?? currentAudioTrack?.artwork ?? null}
+                      showSignalVisualizer
                       isPlaying={isPlaying}
                       onPlayPause={handlePlayPause}
                       onNext={handleNext}
@@ -1141,37 +1164,39 @@ export default function SpotifyTerminal() {
               </div>
             )}
           </div>
-          {hasPlaybackTrack ? (
-            <BottomPlayer
-              track={currentAudioTrack?.title || currentTrack?.title || ""}
-              artist={currentAudioTrack?.artist || currentTrack?.artist || ""}
-              album={currentAudioTrack?.album || currentTrack?.album || ""}
-              currentTime={currentTime}
-              totalTime={currentAudioTrack ? trackDuration : totalTime}
-              isPlaying={isPlaying}
-              onPlayPause={handlePlayPause}
-              onNext={handleNext}
-              onPrev={handlePrev}
-              onSeek={handleSeek}
-              volume={volume}
-              onVolumeChange={setVolume}
-              isShuffle={isShuffle}
-              onShuffleToggle={handleShuffleToggle}
-              isRepeat={isRepeat}
-              onRepeatToggle={handleRepeatToggle}
-              isLiked={isCurrentLiked}
-              onLikeToggle={handleLikeToggle}
-              playlistCoverSrc={playbackPlaylist?.coverSrc ?? null}
-              playlistName={
-                playbackPlaylist?.name
-                  ? getPlaylistDisplayLabel(playbackPlaylist.name, DEFAULT_CURATED_FETCH_LIMIT)
-                  : null
-              }
-              trackArtworkUrl={currentAudioTrack?.artwork ?? null}
-              onOpenNowPlaying={() => setNowPlayingCollapsed(false)}
-            />
-          ) : null}
           </div>
+          {hasPlaybackTrack ? (
+            <div className="sticky bottom-0 z-30 w-full">
+              <BottomPlayer
+                track={currentAudioTrack?.title || currentTrack?.title || ""}
+                artist={currentAudioTrack?.artist || currentTrack?.artist || ""}
+                album={currentAudioTrack?.album || currentTrack?.album || ""}
+                currentTime={currentTime}
+                totalTime={currentAudioTrack ? trackDuration : totalTime}
+                isPlaying={isPlaying}
+                onPlayPause={handlePlayPause}
+                onNext={handleNext}
+                onPrev={handlePrev}
+                onSeek={handleSeek}
+                volume={volume}
+                onVolumeChange={setVolume}
+                isShuffle={isShuffle}
+                onShuffleToggle={handleShuffleToggle}
+                isRepeat={isRepeat}
+                onRepeatToggle={handleRepeatToggle}
+                isLiked={isCurrentLiked}
+                onLikeToggle={handleLikeToggle}
+                playlistCoverSrc={playbackPlaylist?.coverSrc ?? null}
+                playlistName={
+                  playbackPlaylist?.name
+                    ? getPlaylistDisplayLabel(playbackPlaylist.name, DEFAULT_CURATED_FETCH_LIMIT)
+                    : null
+                }
+                trackArtworkUrl={homeStyleTrackArt ?? currentAudioTrack?.artwork ?? null}
+                onOpenNowPlaying={() => setNowPlayingCollapsed(false)}
+              />
+            </div>
+          ) : null}
           <AppFooter />
         </div>
       )}

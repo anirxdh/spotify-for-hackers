@@ -17,7 +17,7 @@ import {
 import type { PopularArtist } from "@/lib/discovery"
 import { POPULAR_ARTISTS } from "@/lib/discovery"
 import type { CommandLog } from "@/lib/commandParser"
-import { playbackArtworkUrl } from "@/lib/playbackArtwork"
+import { playbackArtworkUrl, resolveHomeStyleTrackArt } from "@/lib/playbackArtwork"
 import { AI_DJ_HOSTS } from "@/lib/aiDjHosts"
 import DockedTerminal from "@/components/spotify/DockedTerminal"
 import type { TerminalHandle } from "@/components/spotify/Terminal"
@@ -30,7 +30,7 @@ const fmt = (sec: number) => {
 
 /** Curated / charts / artist cover tiles — hover “flying paper” lift + tilt + stack shadow */
 const HOME_GRID_PAPER =
-  "relative z-0 overflow-visible rounded-sm shadow-[0_1px_0_0_color-mix(in_oklab,var(--border)_55%,transparent)] transition-[box-shadow] duration-300 hover:z-30 hover:shadow-[0_0_28px_color-mix(in_oklab,var(--primary)_18%,transparent)] focus-within:z-30"
+  "relative z-0 overflow-hidden rounded-sm shadow-[0_1px_0_0_color-mix(in_oklab,var(--border)_55%,transparent)] transition-[box-shadow] duration-300 hover:z-30 hover:shadow-[0_0_28px_color-mix(in_oklab,var(--primary)_18%,transparent)] focus-within:z-30"
 
 const HOME_WAVE_STRIPS = 14
 
@@ -183,25 +183,6 @@ function TrackList({
       ))}
     </div>
   )
-}
-
-function resolveHomeStyleTrackArt(track: iTunesTrack): string | null {
-  const stored = playbackArtworkUrl(track.artwork, null)
-  if (stored && !stored.includes("favicon")) return stored
-
-  const haystack = `${track.artist} ${track.album} ${track.title}`.toLowerCase()
-  const artist = POPULAR_ARTISTS.find((a) => haystack.includes(a.name.toLowerCase()))
-  if (artist) return artist.image
-
-  if (haystack.includes("weeknd")) return CURATED_PLAYLIST_IMAGES["This Is The Weeknd"] ?? null
-  if (haystack.includes("lo-fi") || haystack.includes("lofi")) return CURATED_PLAYLIST_IMAGES["Lo-Fi Beats"] ?? null
-  if (haystack.includes("synthwave") || haystack.includes("cyberpunk")) return CURATED_PLAYLIST_IMAGES["Cyberpunk 2077 Radio"] ?? null
-  if (haystack.includes("midnight")) return CURATED_PLAYLIST_IMAGES["Night Drive"] ?? null
-  if (haystack.includes("einaudi") || haystack.includes("focus")) return CURATED_PLAYLIST_IMAGES["Focus Mode"] ?? null
-  if (haystack.includes("tame impala") || haystack.includes("indie")) return CURATED_PLAYLIST_IMAGES["Indie Rock"] ?? null
-  if (haystack.includes("miles davis") || haystack.includes("jazz")) return CURATED_PLAYLIST_IMAGES["Jazz Lounge"] ?? null
-
-  return null
 }
 
 function CuratedPlaylistTile({
@@ -409,8 +390,8 @@ const FOOTER_SOCIAL_LINKS = [
 
 export function AppFooter() {
   return (
-    <footer className="w-full border-t border-primary/10 bg-card font-mono text-xs text-muted-foreground">
-      <div className="px-4 py-5 sm:hidden">
+    <footer className="w-full flex-shrink-0 border-t border-primary/10 bg-card font-mono text-xs text-muted-foreground">
+      <div className="px-4 py-4 sm:hidden">
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-primary text-glow-sm">spotify.trm</div>
@@ -440,7 +421,7 @@ export function AppFooter() {
         </div>
       </div>
 
-      <div className="hidden w-full px-4 py-6 sm:block sm:px-8 sm:py-8">
+      <div className="hidden w-full px-4 py-5 sm:block sm:px-8 sm:py-6">
         <div className="grid gap-8 xl:grid-cols-[1fr_auto]">
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {FOOTER_COLUMNS.map((column) => (
@@ -477,7 +458,7 @@ export function AppFooter() {
           </div>
         </div>
 
-        <div className="mt-8 flex flex-col gap-4 border-t border-primary/15 pt-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mt-6 flex flex-col gap-4 border-t border-primary/15 pt-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap gap-x-4 gap-y-2">
             {FOOTER_LEGAL_LINKS.map((link) => (
               <button key={link} type="button" className="hover:text-primary transition-colors">
@@ -955,11 +936,11 @@ export default function MainContent({
 
   const contentShell =
     activeNav === "3"
-      ? "flex flex-1 flex-col min-h-0 overflow-x-hidden overflow-y-auto p-3 sm:p-5 lg:p-8"
-      : "flex-1 min-h-0 overflow-x-hidden overflow-y-auto p-3 sm:p-5 lg:p-8 space-y-4 sm:space-y-6"
+      ? "flex flex-1 flex-col p-3 sm:p-5 lg:p-8"
+      : "flex-1 p-3 sm:p-5 lg:p-8 space-y-4 sm:space-y-6"
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden bg-background">
+    <div className="flex min-w-0 flex-1 basis-0 flex-col bg-background">
       {/* Search — same label rhythm as right pane (&gt; NOW PLAYING), no framed strip */}
       <div className="flex-shrink-0 bg-background px-3 pb-2 pt-3 sm:px-4 sm:pt-6 lg:pt-8">
         <div

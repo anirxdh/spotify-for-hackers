@@ -31,7 +31,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${shareTechMono.variable} bg-background`}>
-      <body className="font-mono antialiased">
+      <body className="font-mono antialiased bg-background">
         {children}
       </body>
     </html>
