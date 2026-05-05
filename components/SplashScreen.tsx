@@ -19,7 +19,7 @@ const SCRIPT_LINES = [
   "----------------------------------------",
   "> initializing audio matrix...",
   "> loading playlists...",
-  "> press enter to continue...",
+  "> tap to continue...",
 ]
 
 type Stage = "logo" | "version" | "body"
@@ -48,7 +48,7 @@ function SplashVersionPanel() {
   )
 }
 
-export default function SplashScreen() {
+export default function SplashScreen({ onEnter }: { onEnter?: () => void } = {}) {
   const [stage, setStage] = useState<Stage>("logo")
   const [logoIn, setLogoIn] = useState(false)
   const [versionText, setVersionText] = useState("")
@@ -139,7 +139,25 @@ export default function SplashScreen() {
   }, [stage])
 
   return (
-    <div className="min-h-screen w-screen overflow-auto bg-black text-[#00ff41] font-mono antialiased flex flex-col items-start justify-start px-4 pt-6 pb-6 sm:px-8 sm:pt-10">
+    <div
+      role={onEnter ? "button" : undefined}
+      tabIndex={onEnter ? 0 : undefined}
+      onClick={onEnter}
+      onKeyDown={
+        onEnter
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                onEnter()
+              }
+            }
+          : undefined
+      }
+      aria-label={onEnter ? "Tap to enter spotify.trm" : undefined}
+      className={`min-h-screen w-screen overflow-auto bg-black text-[#00ff41] font-mono antialiased flex flex-col items-start justify-start px-4 pt-6 pb-6 sm:px-8 sm:pt-10 ${
+        onEnter ? "cursor-pointer select-none" : ""
+      }`}
+    >
       {/* Intro: logo + version line centered together in the viewport */}
       {(stage === "logo" || stage === "version") && (
         <div className="flex w-full min-h-[calc(100vh-3rem)] flex-col items-center justify-center px-2 sm:min-h-[calc(100vh-4rem)]">

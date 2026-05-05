@@ -807,22 +807,26 @@ export default function SpotifyTerminal() {
     setSidebarArtistPick({ query: artist.query, id: Date.now() })
   }
 
+  const enterApp = useCallback(() => {
+    const a = audioRef.current
+    if (a) {
+      a.muted = true
+      a.src = SILENT_AUDIO_UNLOCK
+      void a.play().then(() => {
+        a.pause()
+        a.removeAttribute("src")
+        a.muted = false
+      })
+    }
+    setIsAuthenticated(true)
+  }, [])
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!isAuthenticated) {
         if (e.key === "Enter") {
           e.preventDefault()
-          const a = audioRef.current
-          if (a) {
-            a.muted = true
-            a.src = SILENT_AUDIO_UNLOCK
-            void a.play().then(() => {
-              a.pause()
-              a.removeAttribute("src")
-              a.muted = false
-            })
-          }
-          setIsAuthenticated(true)
+          enterApp()
         }
         return
       }
@@ -852,7 +856,7 @@ export default function SpotifyTerminal() {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [isAuthenticated, handlePlayPause])
+  }, [isAuthenticated, handlePlayPause, enterApp])
 
   useEffect(() => {
     if (audioRef.current && !previewDuckActiveRef.current) {
@@ -958,7 +962,7 @@ export default function SpotifyTerminal() {
       <audio ref={audioRef} preload="auto" playsInline controls={false} />
       {!isAuthenticated ? (
         <div className="splash-terminal-isolated min-h-screen w-full min-w-0">
-          <SplashScreen />
+          <SplashScreen onEnter={enterApp} />
         </div>
       ) : (
         <div className="flex min-h-[100dvh] w-full flex-col bg-background text-primary font-mono select-none transition-all duration-1000">
