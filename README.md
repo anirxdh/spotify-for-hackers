@@ -17,7 +17,7 @@ A **terminal-style**, Spotify-*inspired* music shell for discovery, library, a f
 ## Visuals
 
 <p align="center">
-  <img src="public/favicon.png" width="96" alt="spotify.trm mark" />
+  <img src="public/logo.png" width="96" alt="spotify.trm mark" />
 </p>
 
 **AI DJ hosts (pick a persona; each has its own ElevenLabs voice and copy tone):**

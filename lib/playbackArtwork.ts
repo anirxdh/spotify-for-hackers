@@ -23,7 +23,7 @@ export function playbackArtworkUrl(
  */
 export function resolveHomeStyleTrackArt(track: iTunesTrack): string | null {
   const stored = playbackArtworkUrl(track.artwork, null)
-  if (stored && !stored.includes("favicon")) return stored
+  if (stored && !stored.includes("favicon") && !stored.includes("logo")) return stored
 
   const haystack = `${track.artist} ${track.album} ${track.title}`.toLowerCase()
   const artist = POPULAR_ARTISTS.find((a) => haystack.includes(a.name.toLowerCase()))

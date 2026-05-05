@@ -166,7 +166,7 @@ export default function SplashScreen({ onEnter }: { onEnter?: () => void } = {})
             <div className="flex h-[min(300px,58vw)] w-full max-w-[min(400px,92vw)] shrink-0 items-center justify-center sm:h-80 sm:max-w-[440px]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src="/favicon.png"
+                src="/logo.png"
                 alt=""
                 width={256}
                 height={256}

@@ -167,7 +167,7 @@ function TrackList({
             listThumbnailSrc ||
             resolveThumbnailSrc?.(t) ||
             playbackArtworkUrl(t.artwork, null) ||
-            "/favicon.png"
+            "/logo.png"
           }
           isActive={currentTrackId === t.id}
           isLiked={isLiked(t.id)}
@@ -202,7 +202,7 @@ function CuratedPlaylistTile({
   disabled?: boolean
 }) {
   const label = caption ?? name
-  const cover = CURATED_PLAYLIST_IMAGES[name] ?? "/favicon.png"
+  const cover = CURATED_PLAYLIST_IMAGES[name] ?? "/logo.png"
   return (
     <div
       className={`group relative aspect-square text-left font-mono focus-within:ring-2 focus-within:ring-primary ${HOME_GRID_PAPER} ${
@@ -1065,7 +1065,7 @@ export default function MainContent({
                 <div className="flex items-center gap-3 bg-background p-3">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={getCuratedPlaylistCover(activePlaylist) ?? "/favicon.png"}
+                    src={getCuratedPlaylistCover(activePlaylist) ?? "/logo.png"}
                     alt=""
                     className="theme-tint-art h-20 w-20 flex-shrink-0 object-cover sm:h-28 sm:w-28"
                   />

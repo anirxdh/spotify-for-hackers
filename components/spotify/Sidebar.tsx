@@ -285,7 +285,7 @@ export default function Sidebar({
       <div className="px-6 pb-6 pt-8 flex items-center justify-between gap-3 min-w-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/favicon.png"
+          src="/logo.png"
           alt=""
           className="h-[52px] w-[52px] shrink-0 object-contain drop-shadow-[0_0_14px_color-mix(in_oklab,var(--primary)_38%,transparent)]"
           style={{ imageRendering: "auto" }}
