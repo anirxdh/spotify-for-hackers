@@ -22,7 +22,7 @@ import { POPULAR_ARTISTS } from "@/lib/discovery"
 import { mockTrackToLikedEntry, MOCK_LIKED_ID_PREFIX, tracks } from "@/lib/mockTracks"
 import { getVoiceResponse, shouldTriggerVoice, VoiceContext } from "@/lib/voiceResponses"
 import { speak, stopSpeech } from "@/lib/textToSpeech"
-import { getElevenLabsStatus } from "@/lib/elevenLabsService"
+import { getElevenLabsStatus, primeTtsAudio } from "@/lib/elevenLabsService"
 import { AI_DJ_HOSTS } from "@/lib/aiDjHosts"
 
 /** While auto-DJ talks, next preview plays at this fraction of the user volume (dead-air bridge). */
@@ -808,18 +808,33 @@ export default function SpotifyTerminal() {
   }
 
   const enterApp = useCallback(() => {
+    // iOS Safari: every <audio> element must be touched inside a user gesture
+    // before it can play programmatically. Prime BOTH the music element and
+    // a reusable TTS element while we still hold the splash tap.
     const a = audioRef.current
     if (a) {
-      a.muted = true
-      a.src = SILENT_AUDIO_UNLOCK
-      void a.play().then(() => {
-        a.pause()
-        a.removeAttribute("src")
-        a.muted = false
-      })
+      try {
+        a.setAttribute("playsinline", "")
+        a.src = SILENT_AUDIO_UNLOCK
+        a.volume = 0
+        a.load()
+        const p = a.play()
+        if (p && typeof p.then === "function") {
+          p.then(() => {
+            a.pause()
+            a.currentTime = 0
+            a.volume = volume / 100
+          }).catch(() => {
+            /* element is still user-activated for later track playback */
+          })
+        }
+      } catch {
+        /* ignore — actual track playback will retry */
+      }
     }
+    primeTtsAudio()
     setIsAuthenticated(true)
-  }, [])
+  }, [volume])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -971,7 +986,7 @@ export default function SpotifyTerminal() {
             <div className="md:hidden border-b border-primary/15 bg-background">
               <div className="flex items-center gap-3 px-3 py-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/favicon.png" alt="" className="h-9 w-9 shrink-0 object-contain" />
+                <img src="/logo.png" alt="" className="h-9 w-9 shrink-0 object-contain" />
                 <div className="min-w-0 flex-1">
                   <div className="text-primary text-sm font-mono text-glow-sm truncate">SPOTIFY.TRM</div>
                   <div className="text-muted-foreground text-[10px] tracking-widest truncate">mobile signal online</div>
