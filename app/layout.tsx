@@ -9,8 +9,8 @@ const shareTechMono = Share_Tech_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'spotify.trm v2.0.1 — music for hackers',
-  description: 'A terminal-style Spotify interface for hackers and cyberpunk enthusiasts.',
+  title: 'spotify.trm v2.0.1',
+  description: 'A terminal-style Spotify interface for cyberpunk enthusiasts.',
   generator: 'v0.app',
   icons: {
     icon: [
