@@ -2,6 +2,10 @@
 
 A **terminal-style**, Spotify-*inspired* music shell for discovery, library, a full command-line **Terminal**, and an **AI DJ** layer with real voice handoffs. Bootstrapped in **[v0](https://v0.dev)**, extended in code, and deployed on **[Vercel](https://vercel.com)**.
 
+> **Try it live →** [spotifyv2-0-1.vercel.app](https://spotifyv2-0-1.vercel.app)
+>
+> Press **Enter** at the splash to start. The AI DJ tab needs the host's keys to talk; everything else (library, search, player, terminal) works out of the box.
+
 > **Disclaimer:** This is an independent fan / educational UI. It is **not** affiliated with, endorsed by, or connected to Spotify AB. “Spotify” here refers to the familiar product *shape* (library, queue, player) that users already understand—we re-skinned that idea for a **hacker-cyberpunk** workflow instead of cloning corporate branding.
 
 ---
