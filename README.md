@@ -1,5 +1,7 @@
 # spotify.trm v2.0.1
 
+> **Write-up:** [Building an AI DJ That Never Leaves Dead Air Between Tracks](https://anirudhvasudevan.com/blog/spotify-for-hackers-ai-dj/), the architecture, decisions and lessons. Built by [Anirudh Vasudevan](https://anirudhvasudevan.com/).
+
 A **terminal-style**, Spotify-*inspired* music shell for discovery, library, a full command-line **Terminal**, and an **AI DJ** layer with real voice handoffs. Bootstrapped in **[v0](https://v0.dev)**, extended in code, and deployed on **[Vercel](https://vercel.com)**.
 
 > **Try it live →** [spotifyv2-0-1.vercel.app](https://spotifyv2-0-1.vercel.app)
